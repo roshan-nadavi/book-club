@@ -25,6 +25,7 @@ export type Database = {
             avatar_url?: string | null;
             created_at?: string;
           };
+          Relationships: [];
         };
         groups: {
           Row: {
@@ -48,11 +49,13 @@ export type Database = {
             invite_code?: string;
             created_at?: string;
           };
+          Relationships: [];
         };
         memberships: {
           Row: { user_id: string; group_id: string };
           Insert: { user_id: string; group_id: string };
           Update: { user_id?: string; group_id?: string };
+          Relationships: [];
         };
         books: {
           Row: {
@@ -79,6 +82,7 @@ export type Database = {
             total_chapters?: number | null;
             created_at?: string;
           };
+          Relationships: [];
         };
         user_book_progress: {
           Row: {
@@ -99,6 +103,7 @@ export type Database = {
             current_chapter?: number;
             updated_at?: string;
           };
+          Relationships: [];
         };
         discussions: {
           Row: {
@@ -125,6 +130,7 @@ export type Database = {
             content?: string;
             created_at?: string;
           };
+          Relationships: [];
         };
         private_chat_rooms: {
           Row: {
@@ -145,11 +151,13 @@ export type Database = {
             group_name?: string | null;
             created_at?: string;
           };
+          Relationships: [];
         };
         private_chat_members: {
           Row: { room_id: string; user_id: string };
           Insert: { room_id: string; user_id: string };
           Update: { room_id?: string; user_id?: string };
+          Relationships: [];
         };
         private_messages: {
           Row: {
@@ -173,7 +181,11 @@ export type Database = {
             content?: string;
             created_at?: string;
           };
+          Relationships: [];
         };
       };
+      Views: Record<string, never>;
+      Functions: Record<string, never>;
+      Enums: Record<string, never>;
     };
   };
