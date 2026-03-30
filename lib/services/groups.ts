@@ -16,48 +16,47 @@ export type GroupDetail = {
 
 function generateInviteCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = new Uint8Array(8);
+  const bytes = new Uint8Array(12);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => chars[b % chars.length]).join("");
 }
 
+// ---------------------------------------------------------------------------
+// List groups for a user
+// ---------------------------------------------------------------------------
+
 /**
  * Groups the current user belongs to, newest first.
+ *
+ * Single query: start from `memberships`, inner-join `groups` so we get
+ * the group fields without a second round-trip.
  */
 export async function listGroupsForUser(
   client: SupabaseClient<Database>,
   userId: string
 ): Promise<{ groups: GroupSummary[]; error: string | null }> {
-  const { data: membershipRows, error: membershipError } = await client
+  const { data, error } = await client
     .from("memberships")
-    .select("group_id")
+    .select("groups!inner(id, name, invite_code, created_at)")
     .eq("user_id", userId);
 
-  if (membershipError) {
-    return { groups: [], error: membershipError.message };
+  if (error) {
+    return { groups: [], error: error.message };
   }
 
-  const groupIds = (membershipRows ?? []).map((m) => m.group_id);
-  if (groupIds.length === 0) {
-    return { groups: [], error: null };
-  }
-
-  const { data: groupRows, error: groupsError } = await client
-    .from("groups")
-    .select("id, name, invite_code, created_at")
-    .in("id", groupIds);
-
-  if (groupsError) {
-    return { groups: [], error: groupsError.message };
-  }
-
-  const groups = [...(groupRows ?? [])] as GroupSummary[];
-  groups.sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
+  const groups = (data ?? [])
+    .map((row) => row.groups as unknown as GroupSummary)
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
 
   return { groups, error: null };
 }
+
+// ---------------------------------------------------------------------------
+// Get a single group for a member
+// ---------------------------------------------------------------------------
 
 export type GetGroupForMemberResult =
   | { ok: true; group: GroupDetail }
@@ -66,35 +65,30 @@ export type GetGroupForMemberResult =
 
 /**
  * Load a group only if the user is a member.
+ *
+ * Single query: start from `memberships` filtered by both `user_id` and
+ * `group_id`, inner-join `groups` to pull the group fields in the same call.
  */
 export async function getGroupForMember(
   client: SupabaseClient<Database>,
   userId: string,
   groupId: string
 ): Promise<GetGroupForMemberResult> {
-  const { data: membership, error: membershipError } = await client
+  const { data, error } = await client
     .from("memberships")
-    .select("group_id")
+    .select("groups!inner(id, name, invite_code)")
     .eq("user_id", userId)
     .eq("group_id", groupId)
     .maybeSingle();
 
-  if (membershipError) {
-    return { ok: false, kind: "error", message: membershipError.message };
+  if (error) {
+    return { ok: false, kind: "error", message: error.message };
   }
-  if (!membership) {
+  if (!data) {
     return { ok: false, kind: "not_member" };
   }
 
-  const { data: group, error: groupError } = await client
-    .from("groups")
-    .select("id, name, invite_code")
-    .eq("id", groupId)
-    .single();
-
-  if (groupError) {
-    return { ok: false, kind: "error", message: groupError.message };
-  }
+  const group = data.groups as unknown as GroupDetail;
   if (!group) {
     return { ok: false, kind: "group_missing" };
   }
@@ -102,12 +96,18 @@ export async function getGroupForMember(
   return { ok: true, group };
 }
 
+// ---------------------------------------------------------------------------
+// Create a group with the creator as a member
+// ---------------------------------------------------------------------------
+
 export type CreateGroupResult =
   | { ok: true; groupId: string }
   | { ok: false; message: string };
 
 /**
  * Create a group and add the user as a member.
+ * Two writes are inherently sequential (insert group → insert membership),
+ * so two calls are unavoidable here.
  */
 export async function createGroupWithMembership(
   client: SupabaseClient<Database>,
@@ -118,11 +118,7 @@ export async function createGroupWithMembership(
 
   const { data: group, error: groupError } = await client
     .from("groups")
-    .insert({
-      name,
-      admin_id: userId,
-      invite_code,
-    })
+    .insert({ name, admin_id: userId, invite_code })
     .select("id")
     .single();
 
@@ -133,16 +129,12 @@ export async function createGroupWithMembership(
     };
   }
 
-  const { error: memberError } = await client.from("memberships").insert({
-    user_id: userId,
-    group_id: group.id,
-  });
+  const { error: memberError } = await client
+    .from("memberships")
+    .insert({ user_id: userId, group_id: group.id });
 
   if (memberError) {
-    return {
-      ok: false,
-      message: memberError.message ?? "Could not join group.",
-    };
+    return { ok: false, message: memberError.message ?? "Could not join group." };
   }
 
   return { ok: true, groupId: group.id };

@@ -9,6 +9,29 @@ export type UserBookProgress = {
 };
 
 // ---------------------------------------------------------------------------
+// Intermediate shapes for joined query results
+//
+// Supabase's type inference only follows FK relationships in the direction they
+// are declared in Database["public"]["Tables"][T]["Relationships"]. When we
+// join in the *reverse* direction (e.g. from `books` into `memberships` or
+// `user_book_progress`, whose FK points at `books` — not the other way around)
+// the inferred type for `data` won't include the joined columns. We therefore
+// cast the raw result to these explicit intermediate types which mirror what
+// PostgREST actually returns at runtime.
+// ---------------------------------------------------------------------------
+
+type BookWithMembership = {
+  group_id: string;
+  memberships: { user_id: string }[];
+};
+
+type BookWithMembershipAndProgress = {
+  group_id: string;
+  memberships: { user_id: string }[];
+  user_book_progress: UserBookProgress[];
+};
+
+// ---------------------------------------------------------------------------
 // Update (or initialise) a user's chapter progress for a book
 // ---------------------------------------------------------------------------
 
@@ -18,8 +41,12 @@ export type UpdateProgressResult =
 
 /**
  * Upsert the calling user's current chapter for a book.
- * `currentChapter` must be a non-negative integer.
- * The user must be a member of the group that owns the book.
+ * `currentChapter` must be a non-negative number (decimals allowed — the
+ * underlying column is DECIMAL(5,1), so 12.5 is valid).
+ *
+ * Single read query: start from `books`, inner-join `memberships` scoped to
+ * this user so we confirm both book existence and membership in one call.
+ * The upsert is a separate write (unavoidable).
  */
 export async function updateBookProgress(
   client: SupabaseClient<Database>,
@@ -27,43 +54,38 @@ export async function updateBookProgress(
   bookId: string,
   currentChapter: number
 ): Promise<UpdateProgressResult> {
-  if (!Number.isInteger(currentChapter) || currentChapter < 0) {
+  if (typeof currentChapter !== "number" || currentChapter < 0 || !isFinite(currentChapter)) {
     return {
       ok: false,
       kind: "invalid_chapter",
-      message: "Current chapter must be a non-negative integer.",
+      message: "Current chapter must be a non-negative number.",
     };
   }
 
-  // 1. Resolve which group this book belongs to and verify membership
-  const { data: book, error: bookError } = await client
+  // Confirm book exists and user is a member of its group — one read.
+  // Cast to BookWithMembership because the joined `memberships` columns are
+  // not reflected in the inferred type when joining from the FK target side.
+  const { data, error: bookError } = await client
     .from("books")
-    .select("group_id")
+    .select("group_id, memberships!inner(user_id)")
     .eq("id", bookId)
+    .eq("memberships.user_id", userId)
     .maybeSingle();
 
   if (bookError) {
     return { ok: false, kind: "error", message: bookError.message };
   }
-  if (!book) {
-    return { ok: false, kind: "error", message: "Book not found." };
+
+  const book = data as BookWithMembership | null;
+
+  if (!book || book.memberships.length === 0) {
+    return {
+      ok: false,
+      kind: "not_member",
+      message: "Book not found or you are not a member of this group.",
+    };
   }
 
-  const { data: membership, error: membershipError } = await client
-    .from("memberships")
-    .select("group_id")
-    .eq("user_id", userId)
-    .eq("group_id", book.group_id)
-    .maybeSingle();
-
-  if (membershipError) {
-    return { ok: false, kind: "error", message: membershipError.message };
-  }
-  if (!membership) {
-    return { ok: false, kind: "not_member", message: "You are not a member of this group." };
-  }
-
-  // 2. Upsert the progress row
   const { error: upsertError } = await client
     .from("user_book_progress")
     .upsert(
@@ -93,53 +115,44 @@ export type GetBookProgressResult =
 
 /**
  * Return the current chapter progress for every member of the group for a
- * given book, ordered by chapter descending (furthest ahead first).
- * The requesting user must be a member of the group.
+ * given book, sorted furthest-ahead first.
+ *
+ * Single query: start from `books`, inner-join `memberships` (scoped to this
+ * user for the auth check) and `user_book_progress` (all rows) in the same
+ * select so no second round-trip is needed.
  */
 export async function getBookProgress(
   client: SupabaseClient<Database>,
   userId: string,
   bookId: string
 ): Promise<GetBookProgressResult> {
-  // 1. Resolve the group this book belongs to
-  const { data: book, error: bookError } = await client
+  const { data, error: bookError } = await client
     .from("books")
-    .select("group_id")
+    .select(
+      "group_id, memberships!inner(user_id), user_book_progress(user_id, book_id, current_chapter, updated_at)"
+    )
     .eq("id", bookId)
+    .eq("memberships.user_id", userId)
     .maybeSingle();
 
   if (bookError) {
     return { ok: false, kind: "error", message: bookError.message };
   }
-  if (!book) {
-    return { ok: false, kind: "error", message: "Book not found." };
+
+  // Cast to the explicit intermediate type — see note at top of file.
+  const book = data as BookWithMembershipAndProgress | null;
+
+  if (!book || book.memberships.length === 0) {
+    return {
+      ok: false,
+      kind: "not_member",
+      message: "Book not found or you are not a member of this group.",
+    };
   }
 
-  // 2. Verify the requesting user is a member
-  const { data: membership, error: membershipError } = await client
-    .from("memberships")
-    .select("group_id")
-    .eq("user_id", userId)
-    .eq("group_id", book.group_id)
-    .maybeSingle();
+  const progress = [...(book.user_book_progress ?? [])].sort(
+    (a, b) => b.current_chapter - a.current_chapter
+  );
 
-  if (membershipError) {
-    return { ok: false, kind: "error", message: membershipError.message };
-  }
-  if (!membership) {
-    return { ok: false, kind: "not_member", message: "You are not a member of this group." };
-  }
-
-  // 3. Fetch all progress rows for this book
-  const { data: progress, error: progressError } = await client
-    .from("user_book_progress")
-    .select("user_id, book_id, current_chapter, updated_at")
-    .eq("book_id", bookId)
-    .order("current_chapter", { ascending: false });
-
-  if (progressError) {
-    return { ok: false, kind: "error", message: progressError.message };
-  }
-
-  return { ok: true, progress: (progress ?? []) as UserBookProgress[] };
+  return { ok: true, progress };
 }

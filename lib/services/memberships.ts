@@ -11,18 +11,21 @@ export type JoinGroupResult =
 
 /**
  * Look up a group by invite code and add the user as a member.
- * Returns `already_member` without error if the user is already in the group.
+ *
+ * Single read query: start from `groups` filtered by invite_code, left-join
+ * `memberships` filtered to this user so we can detect an existing membership
+ * in the same call.  The write (insert) is inherently a separate call.
  */
 export async function joinGroupByInviteCode(
   client: SupabaseClient<Database>,
   userId: string,
   inviteCode: string
 ): Promise<JoinGroupResult> {
-  // 1. Resolve the group from the invite code
   const { data: group, error: groupError } = await client
     .from("groups")
-    .select("id")
+    .select("id, memberships!left(user_id)")
     .eq("invite_code", inviteCode.trim().toUpperCase())
+    .eq("memberships.user_id", userId)
     .maybeSingle();
 
   if (groupError) {
@@ -32,22 +35,12 @@ export async function joinGroupByInviteCode(
     return { ok: false, kind: "invalid_code", message: "No group found with that invite code." };
   }
 
-  // 2. Check for an existing membership
-  const { data: existing, error: membershipCheckError } = await client
-    .from("memberships")
-    .select("group_id")
-    .eq("user_id", userId)
-    .eq("group_id", group.id)
-    .maybeSingle();
-
-  if (membershipCheckError) {
-    return { ok: false, kind: "error", message: membershipCheckError.message };
-  }
-  if (existing) {
+  // memberships is an array — if any row came back the user is already a member
+  const memberships = group.memberships as { user_id: string }[];
+  if (memberships.length > 0) {
     return { ok: false, kind: "already_member", message: "You are already a member of this group." };
   }
 
-  // 3. Insert the membership
   const { error: insertError } = await client
     .from("memberships")
     .insert({ user_id: userId, group_id: group.id });
@@ -70,6 +63,10 @@ export type KickMemberResult =
 /**
  * Remove `targetUserId` from the group.
  * Only the group admin may do this, and admins cannot kick themselves.
+ *
+ * Single read query: start from `groups` filtered by id, left-join
+ * `memberships` scoped to the target user.  One call returns both `admin_id`
+ * and whether the target membership row exists.
  */
 export async function kickMember(
   client: SupabaseClient<Database>,
@@ -81,11 +78,11 @@ export async function kickMember(
     return { ok: false, kind: "cannot_kick_self", message: "You cannot kick yourself from the group." };
   }
 
-  // 1. Verify the requesting user is the group admin
   const { data: group, error: groupError } = await client
     .from("groups")
-    .select("admin_id")
+    .select("admin_id, memberships!left(user_id)")
     .eq("id", groupId)
+    .eq("memberships.user_id", targetUserId)
     .maybeSingle();
 
   if (groupError) {
@@ -95,22 +92,11 @@ export async function kickMember(
     return { ok: false, kind: "not_admin", message: "Only the group admin can remove members." };
   }
 
-  // 2. Verify the target is actually a member
-  const { data: membership, error: membershipError } = await client
-    .from("memberships")
-    .select("group_id")
-    .eq("user_id", targetUserId)
-    .eq("group_id", groupId)
-    .maybeSingle();
-
-  if (membershipError) {
-    return { ok: false, kind: "error", message: membershipError.message };
-  }
-  if (!membership) {
+  const memberships = group.memberships as { user_id: string }[];
+  if (memberships.length === 0) {
     return { ok: false, kind: "not_member", message: "That user is not a member of this group." };
   }
 
-  // 3. Delete the membership
   const { error: deleteError } = await client
     .from("memberships")
     .delete()

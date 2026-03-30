@@ -1,7 +1,5 @@
 // Auto-generate this file by running:
 // npx supabase gen types typescript --project-id <your-project-id> > types/database.types.ts
-//
-// Hand-crafted version based on your schema — replace with generated output.
 
 export type Database = {
     public: {
@@ -25,8 +23,10 @@ export type Database = {
             avatar_url?: string | null;
             created_at?: string;
           };
+          // profiles.id references auth.users — auth schema is external, omitted by convention
           Relationships: [];
         };
+  
         groups: {
           Row: {
             id: string;
@@ -49,14 +49,36 @@ export type Database = {
             invite_code?: string;
             created_at?: string;
           };
-          Relationships: [];
+          Relationships: [
+            {
+              foreignKeyName: "groups_admin_id_fkey";
+              columns: ["admin_id"];
+              referencedRelation: "profiles";
+              referencedColumns: ["id"];
+            }
+          ];
         };
+  
         memberships: {
           Row: { user_id: string; group_id: string };
           Insert: { user_id: string; group_id: string };
           Update: { user_id?: string; group_id?: string };
-          Relationships: [];
+          Relationships: [
+            {
+              foreignKeyName: "memberships_user_id_fkey";
+              columns: ["user_id"];
+              referencedRelation: "profiles";
+              referencedColumns: ["id"];
+            },
+            {
+              foreignKeyName: "memberships_group_id_fkey";
+              columns: ["group_id"];
+              referencedRelation: "groups";
+              referencedColumns: ["id"];
+            }
+          ];
         };
+  
         books: {
           Row: {
             id: string;
@@ -82,12 +104,21 @@ export type Database = {
             total_chapters?: number | null;
             created_at?: string;
           };
-          Relationships: [];
+          Relationships: [
+            {
+              foreignKeyName: "books_group_id_fkey";
+              columns: ["group_id"];
+              referencedRelation: "groups";
+              referencedColumns: ["id"];
+            }
+          ];
         };
+  
         user_book_progress: {
           Row: {
             user_id: string;
             book_id: string;
+            // DECIMAL(5,1) in Postgres — number covers both integer and decimal chapters
             current_chapter: number;
             updated_at: string;
           };
@@ -103,8 +134,22 @@ export type Database = {
             current_chapter?: number;
             updated_at?: string;
           };
-          Relationships: [];
+          Relationships: [
+            {
+              foreignKeyName: "user_book_progress_user_id_fkey";
+              columns: ["user_id"];
+              referencedRelation: "profiles";
+              referencedColumns: ["id"];
+            },
+            {
+              foreignKeyName: "user_book_progress_book_id_fkey";
+              columns: ["book_id"];
+              referencedRelation: "books";
+              referencedColumns: ["id"];
+            }
+          ];
         };
+  
         discussions: {
           Row: {
             id: string;
@@ -130,8 +175,28 @@ export type Database = {
             content?: string;
             created_at?: string;
           };
-          Relationships: [];
+          Relationships: [
+            {
+              foreignKeyName: "discussions_group_id_fkey";
+              columns: ["group_id"];
+              referencedRelation: "groups";
+              referencedColumns: ["id"];
+            },
+            {
+              foreignKeyName: "discussions_book_id_fkey";
+              columns: ["book_id"];
+              referencedRelation: "books";
+              referencedColumns: ["id"];
+            },
+            {
+              foreignKeyName: "discussions_sender_id_fkey";
+              columns: ["sender_id"];
+              referencedRelation: "profiles";
+              referencedColumns: ["id"];
+            }
+          ];
         };
+  
         private_chat_rooms: {
           Row: {
             id: string;
@@ -151,14 +216,36 @@ export type Database = {
             group_name?: string | null;
             created_at?: string;
           };
-          Relationships: [];
+          Relationships: [
+            {
+              foreignKeyName: "private_chat_rooms_book_id_fkey";
+              columns: ["book_id"];
+              referencedRelation: "books";
+              referencedColumns: ["id"];
+            }
+          ];
         };
+  
         private_chat_members: {
           Row: { room_id: string; user_id: string };
           Insert: { room_id: string; user_id: string };
           Update: { room_id?: string; user_id?: string };
-          Relationships: [];
+          Relationships: [
+            {
+              foreignKeyName: "private_chat_members_room_id_fkey";
+              columns: ["room_id"];
+              referencedRelation: "private_chat_rooms";
+              referencedColumns: ["id"];
+            },
+            {
+              foreignKeyName: "private_chat_members_user_id_fkey";
+              columns: ["user_id"];
+              referencedRelation: "profiles";
+              referencedColumns: ["id"];
+            }
+          ];
         };
+  
         private_messages: {
           Row: {
             id: string;
@@ -181,7 +268,20 @@ export type Database = {
             content?: string;
             created_at?: string;
           };
-          Relationships: [];
+          Relationships: [
+            {
+              foreignKeyName: "private_messages_room_id_fkey";
+              columns: ["room_id"];
+              referencedRelation: "private_chat_rooms";
+              referencedColumns: ["id"];
+            },
+            {
+              foreignKeyName: "private_messages_sender_id_fkey";
+              columns: ["sender_id"];
+              referencedRelation: "profiles";
+              referencedColumns: ["id"];
+            }
+          ];
         };
       };
       Views: Record<string, never>;

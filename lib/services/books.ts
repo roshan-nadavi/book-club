@@ -19,8 +19,11 @@ export type AddBookResult =
   | { ok: false; kind: "not_member" | "error"; message: string };
 
 /**
- * Add a book to a group.
- * The requesting user must be a member of the group.
+ * Add a book to a group. The requesting user must be a member.
+ *
+ * Single read query: join `memberships` onto `groups` scoped to this user so
+ * membership is confirmed without a separate call.  The insert is a separate
+ * write (unavoidable).
  */
 export async function addBookToGroup(
   client: SupabaseClient<Database>,
@@ -30,10 +33,10 @@ export async function addBookToGroup(
   author?: string,
   totalChapters?: number
 ): Promise<AddBookResult> {
-  // 1. Confirm the user is a member of the group
+  // Confirm membership via a join — one read
   const { data: membership, error: membershipError } = await client
     .from("memberships")
-    .select("group_id")
+    .select("group_id, groups!inner(id)")
     .eq("user_id", userId)
     .eq("group_id", groupId)
     .maybeSingle();
@@ -45,7 +48,6 @@ export async function addBookToGroup(
     return { ok: false, kind: "not_member", message: "You are not a member of this group." };
   }
 
-  // 2. Insert the book
   const { data: book, error: bookError } = await client
     .from("books")
     .insert({
@@ -75,37 +77,33 @@ export type ListBooksResult =
 /**
  * Return all books belonging to a group, newest first.
  * The requesting user must be a member.
+ *
+ * Single query: start from `memberships` (confirming membership) and
+ * inner-join `groups` → `books` to pull all books in the same call.
  */
 export async function listBooksForGroup(
   client: SupabaseClient<Database>,
   userId: string,
   groupId: string
 ): Promise<ListBooksResult> {
-  // 1. Confirm membership
-  const { data: membership, error: membershipError } = await client
+  const { data, error } = await client
     .from("memberships")
-    .select("group_id")
+    .select("groups!inner(books(id, group_id, title, author, total_chapters, created_at))")
     .eq("user_id", userId)
     .eq("group_id", groupId)
     .maybeSingle();
 
-  if (membershipError) {
-    return { ok: false, kind: "error", message: membershipError.message };
+  if (error) {
+    return { ok: false, kind: "error", message: error.message };
   }
-  if (!membership) {
+  if (!data) {
     return { ok: false, kind: "not_member", message: "You are not a member of this group." };
   }
 
-  // 2. Fetch books
-  const { data: books, error: booksError } = await client
-    .from("books")
-    .select("id, group_id, title, author, total_chapters, created_at")
-    .eq("group_id", groupId)
-    .order("created_at", { ascending: false });
+  const group = data.groups as unknown as { books: BookSummary[] };
+  const books = [...(group?.books ?? [])].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
 
-  if (booksError) {
-    return { ok: false, kind: "error", message: booksError.message };
-  }
-
-  return { ok: true, books: (books ?? []) as BookSummary[] };
+  return { ok: true, books };
 }
