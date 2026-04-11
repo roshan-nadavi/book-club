@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import LogoutButton from "@/components/auth/LogoutButton";
 import { getGroupForMember } from "@/lib/services/groups";
+import GroupSplitView from "@/components/groups/GroupSplitView";
 
 export default async function GroupPage({
   params,
@@ -14,6 +15,7 @@ export default async function GroupPage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
   if (!user) {
     redirect("/login");
   }
@@ -35,28 +37,54 @@ export default async function GroupPage({
 
   const { group } = result;
 
+  // Fetch books and group-level messages directly via Supabase
+  const [{ data: bookRows }, { data: messageRows }] = await Promise.all([
+    supabase
+      .from("books")
+      .select("id, group_id, title, author, total_chapters, created_at")
+      .eq("group_id", id)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("discussions")
+      .select("id, group_id, book_id, sender_id, content, created_at")
+      .eq("group_id", id)
+      .is("book_id", null)
+      .order("created_at", { ascending: true }),
+  ]);
+
+  const books = bookRows ?? [];
+  const messages = messageRows ?? [];
+
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
-      <header className="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
-        <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+    <div className="flex flex-col h-screen bg-neutral-50 dark:bg-neutral-950">
+      <header className="shrink-0 border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-3">
             <Link
               href="/"
-              className="text-sm font-medium text-neutral-600 underline-offset-4 hover:underline dark:text-neutral-400"
+              className="text-sm font-medium text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100 transition"
             >
-              ← All groups
+              ← Groups
             </Link>
-            <h1 className="mt-2 text-xl font-semibold text-neutral-900 dark:text-neutral-100">{group.name}</h1>
-            <p className="mt-1 font-mono text-sm text-neutral-500">Invite code: {group.invite_code}</p>
+            <span className="text-neutral-300 dark:text-neutral-700">/</span>
+            <h1 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              {group.name}
+            </h1>
+            <span className="hidden sm:inline font-mono text-xs text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded">
+              {group.invite_code}
+            </span>
           </div>
           <LogoutButton />
         </div>
       </header>
-      <main className="mx-auto max-w-3xl px-4 py-8">
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">
-          Group home — books and discussions can live here next.
-        </p>
-      </main>
+
+      <GroupSplitView
+        groupId={id}
+        currentUserId={user.id}
+        currentUserEmail={user.email ?? ""}
+        initialBooks={books}
+        initialMessages={messages}
+      />
     </div>
   );
 }
