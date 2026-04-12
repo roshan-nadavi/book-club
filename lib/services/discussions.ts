@@ -1,14 +1,46 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database.types";
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 export type DiscussionMessage = {
+  id: string;
+  group_id: string;
+  book_id: string | null;
+  sender_id: string | null;
+  // Username pulled from profiles via the sender_id → profiles(id) FK.
+  // Null when the sender's profile has no username set, or when sender_id
+  // itself is null (e.g. a system message).
+  sender_username: string | null;
+  content: string;
+  created_at: string;
+};
+
+// Raw shape returned by the Supabase join before we flatten it
+type RawDiscussion = {
   id: string;
   group_id: string;
   book_id: string | null;
   sender_id: string | null;
   content: string;
   created_at: string;
+  profiles: { username: string | null } | null;
 };
+
+// Flatten the nested profiles object into sender_username
+function flattenMessage(raw: RawDiscussion): DiscussionMessage {
+  return {
+    id: raw.id,
+    group_id: raw.group_id,
+    book_id: raw.book_id,
+    sender_id: raw.sender_id,
+    sender_username: raw.profiles?.username ?? null,
+    content: raw.content,
+    created_at: raw.created_at,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Get all group-level messages (book_id IS NULL)
@@ -20,37 +52,51 @@ export type GetGroupMessagesResult =
 
 /**
  * Return all group-level discussion messages (not tied to a book), oldest first.
+ * Each message includes the sender's username via a join on profiles.
  *
- * Single query: start from `memberships` (membership check), inner-join
- * `groups` → `discussions` filtering book_id IS NULL in the nested select.
+ * Two queries:
+ *   1. Membership check.
+ *   2. Fetch discussions joined with profiles to get sender_username.
+ *
+ * The nested join approach (memberships → groups → discussions) was replaced
+ * because filtering deeply nested columns (groups.discussions.book_id) is not
+ * reliably supported by PostgREST. Separating the membership check from the
+ * data fetch is more predictable and allows the profiles join to work cleanly.
  */
 export async function getGroupMessages(
   client: SupabaseClient<Database>,
   userId: string,
   groupId: string
 ): Promise<GetGroupMessagesResult> {
-  const { data, error } = await client
+  // 1. Confirm membership
+  const { data: membership, error: membershipError } = await client
     .from("memberships")
-    .select(
-      "groups!inner(discussions(id, group_id, book_id, sender_id, content, created_at))"
-    )
+    .select("group_id")
     .eq("user_id", userId)
     .eq("group_id", groupId)
-    .is("groups.discussions.book_id", null)
     .maybeSingle();
+
+  if (membershipError) {
+    return { ok: false, kind: "error", message: membershipError.message };
+  }
+  if (!membership) {
+    return { ok: false, kind: "not_member", message: "You are not a member of this group." };
+  }
+
+  // 2. Fetch group-level messages with sender username
+  // discussions.sender_id → profiles.id is a direct FK so this join is valid
+  const { data, error } = await client
+    .from("discussions")
+    .select("id, group_id, book_id, sender_id, content, created_at, profiles(username)")
+    .eq("group_id", groupId)
+    .is("book_id", null)
+    .order("created_at", { ascending: true });
 
   if (error) {
     return { ok: false, kind: "error", message: error.message };
   }
-  if (!data) {
-    return { ok: false, kind: "not_member", message: "You are not a member of this group." };
-  }
 
-  const group = data.groups as unknown as { discussions: DiscussionMessage[] };
-  const messages = [...(group?.discussions ?? [])].sort(
-    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-  );
-
+  const messages = (data ?? []).map((row) => flattenMessage(row as unknown as RawDiscussion));
   return { ok: true, messages };
 }
 
@@ -64,9 +110,11 @@ export type GetBookMessagesResult =
 
 /**
  * Return all discussion messages tied to a specific book, oldest first.
+ * Each message includes the sender's username via a join on profiles.
  *
- * Single query: start from `memberships` (membership check), inner-join
- * `groups` → `discussions` scoped to the given book_id.
+ * Two queries:
+ *   1. Membership check.
+ *   2. Fetch discussions for this book joined with profiles.
  */
 export async function getBookMessages(
   client: SupabaseClient<Database>,
@@ -74,28 +122,34 @@ export async function getBookMessages(
   groupId: string,
   bookId: string
 ): Promise<GetBookMessagesResult> {
-  const { data, error } = await client
+  // 1. Confirm membership
+  const { data: membership, error: membershipError } = await client
     .from("memberships")
-    .select(
-      "groups!inner(discussions(id, group_id, book_id, sender_id, content, created_at))"
-    )
+    .select("group_id")
     .eq("user_id", userId)
     .eq("group_id", groupId)
-    .eq("groups.discussions.book_id", bookId)
     .maybeSingle();
+
+  if (membershipError) {
+    return { ok: false, kind: "error", message: membershipError.message };
+  }
+  if (!membership) {
+    return { ok: false, kind: "not_member", message: "You are not a member of this group." };
+  }
+
+  // 2. Fetch book-specific messages with sender username
+  const { data, error } = await client
+    .from("discussions")
+    .select("id, group_id, book_id, sender_id, content, created_at, profiles(username)")
+    .eq("group_id", groupId)
+    .eq("book_id", bookId)
+    .order("created_at", { ascending: true });
 
   if (error) {
     return { ok: false, kind: "error", message: error.message };
   }
-  if (!data) {
-    return { ok: false, kind: "not_member", message: "You are not a member of this group." };
-  }
 
-  const group = data.groups as unknown as { discussions: DiscussionMessage[] };
-  const messages = [...(group?.discussions ?? [])].sort(
-    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-  );
-
+  const messages = (data ?? []).map((row) => flattenMessage(row as unknown as RawDiscussion));
   return { ok: true, messages };
 }
 
@@ -110,9 +164,6 @@ export type PostMessageResult =
 /**
  * Post a discussion message.
  * Pass `bookId` to attach the message to a book; omit/null for a group-level message.
- *
- * Single read query: confirm membership via an inner-join on `groups`, then a
- * separate insert (write cannot be combined with a join read).
  */
 export async function postMessage(
   client: SupabaseClient<Database>,
@@ -126,10 +177,10 @@ export async function postMessage(
     return { ok: false, kind: "empty_content", message: "Message content cannot be empty." };
   }
 
-  // Confirm membership in one read
+  // Confirm membership
   const { data: membership, error: membershipError } = await client
     .from("memberships")
-    .select("groups!inner(id)")
+    .select("group_id")
     .eq("user_id", userId)
     .eq("group_id", groupId)
     .maybeSingle();

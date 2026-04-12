@@ -1,28 +1,42 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database.types";
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 export type UserBookProgress = {
   user_id: string;
   book_id: string;
   current_chapter: number;
   updated_at: string;
+  // Username pulled from profiles via the user_id → profiles(id) FK.
+  username: string | null;
 };
 
-// ---------------------------------------------------------------------------
-// Intermediate shapes for joined query results
-//
-// The books → memberships join is not possible directly because there is no
-// FK between those two tables. Both relate to groups, but PostgREST requires
-// a direct FK to perform a join. Instead we read the book's group_id first
-// (joined with user_book_progress in one call for getBookProgress), then
-// check membership separately. This keeps it to two queries maximum while
-// staying within what PostgREST can actually resolve.
-// ---------------------------------------------------------------------------
+// Raw shape returned by Supabase before flattening the nested profiles object
+type RawProgress = {
+  user_id: string;
+  book_id: string;
+  current_chapter: number;
+  updated_at: string;
+  profiles: { username: string | null } | null;
+};
 
-type BookWithProgress = {
+type BookWithRawProgress = {
   group_id: string;
-  user_book_progress: UserBookProgress[];
+  user_book_progress: RawProgress[];
 };
+
+function flattenProgress(raw: RawProgress): UserBookProgress {
+  return {
+    user_id: raw.user_id,
+    book_id: raw.book_id,
+    current_chapter: raw.current_chapter,
+    updated_at: raw.updated_at,
+    username: raw.profiles?.username ?? null,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Update (or initialise) a user's chapter progress for a book
@@ -38,12 +52,8 @@ export type UpdateProgressResult =
  * the underlying column is DECIMAL(5,1), so 12.5 is valid).
  *
  * Two queries:
- *   1. Read the book to get its group_id, then check membership via
- *      the memberships table using that group_id.
+ *   1. Read the book's group_id, then verify membership.
  *   2. Upsert the progress row.
- *
- * The books → memberships join was removed because there is no direct FK
- * between those tables — PostgREST requires one to perform a join.
  */
 export async function updateBookProgress(
   client: SupabaseClient<Database>,
@@ -59,7 +69,7 @@ export async function updateBookProgress(
     };
   }
 
-  // 1a. Fetch the book to get its group_id
+  // 1a. Get the book's group_id
   const { data: book, error: bookError } = await client
     .from("books")
     .select("group_id")
@@ -119,25 +129,25 @@ export type GetBookProgressResult =
 /**
  * Return the current chapter progress for every member of the group for a
  * given book, sorted furthest-ahead first.
+ * Each row includes the member's username via a join on profiles.
  *
  * Two queries:
- *   1. Read the book joined with user_book_progress (direct FK exists), then
- *      check membership using the book's group_id.
- *   2. Membership check via memberships table.
- *
- * user_book_progress joins books directly (book_id FK), so that join is valid.
- * The memberships check must be separate for the same reason as above.
+ *   1. Read the book joined with user_book_progress → profiles in one call.
+ *      Both joins are valid: user_book_progress.book_id → books.id (direct FK),
+ *      and user_book_progress.user_id → profiles.id (direct FK).
+ *   2. Membership check using the book's group_id.
  */
 export async function getBookProgress(
   client: SupabaseClient<Database>,
   userId: string,
   bookId: string
 ): Promise<GetBookProgressResult> {
-  // 1a. Fetch the book and all progress rows in one query —
-  //     user_book_progress.book_id → books.id is a direct FK so this join is valid
+  // 1a. Fetch the book, all progress rows, and each member's username
   const { data: book, error: bookError } = await client
     .from("books")
-    .select("group_id, user_book_progress(user_id, book_id, current_chapter, updated_at)")
+    .select(
+      "group_id, user_book_progress(user_id, book_id, current_chapter, updated_at, profiles(username))"
+    )
     .eq("id", bookId)
     .maybeSingle();
 
@@ -163,10 +173,10 @@ export async function getBookProgress(
     return { ok: false, kind: "not_member", message: "You are not a member of this group." };
   }
 
-  const typedBook = book as unknown as BookWithProgress;
-  const progress = [...(typedBook.user_book_progress ?? [])].sort(
-    (a, b) => b.current_chapter - a.current_chapter
-  );
+  const typedBook = book as unknown as BookWithRawProgress;
+  const progress = (typedBook.user_book_progress ?? [])
+    .map(flattenProgress)
+    .sort((a, b) => b.current_chapter - a.current_chapter);
 
   return { ok: true, progress };
 }
