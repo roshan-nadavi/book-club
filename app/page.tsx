@@ -1,16 +1,16 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import CreateGroupForm from "@/components/groups/CreateGroupForm";
-import LogoutButton from "@/components/auth/LogoutButton";
 import { listGroupsForUser } from "@/lib/services/groups";
+import LogoutButton from "@/components/auth/LogoutButton";
+import CreateGroupForm from "@/components/groups/CreateGroupForm";
+import JoinGroupForm from "@/components/groups/JoinGroupForm";
 
-export default async function Home({
+export default async function HomePage({
   searchParams,
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  const params = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -20,76 +20,90 @@ export default async function Home({
     redirect("/login");
   }
 
-  const { groups, error: listError } = await listGroupsForUser(supabase, user.id);
+  const { groups, error } = await listGroupsForUser(supabase, user.id);
+  const { error: pageError } = await searchParams;
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
       <header className="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
-        <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-              Your book clubs
-            </h1>
-            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-              Create a group or open one you belong to. Use{" "}
-              <strong className="font-medium text-neutral-700 dark:text-neutral-300">Log out</strong>{" "}
-              to return to the sign-in page.
-            </p>
-          </div>
+        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-4">
+          <h1 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+            📚 Book Club
+          </h1>
           <LogoutButton />
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-8">
-        {params.error && (
-          <p
-            className="mb-6 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
-            role="alert"
-          >
-            {params.error}
+      <main className="mx-auto max-w-3xl px-4 py-8 space-y-8">
+        {pageError && (
+          <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
+            {decodeURIComponent(pageError)}
           </p>
         )}
 
-        {listError && (
-          <p className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
-            Could not load groups: {listError}
-          </p>
-        )}
+        {/* Your Groups */}
+        <section>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-3">
+            Your Groups
+          </h2>
+          {error && (
+            <p className="text-sm text-red-600 dark:text-red-400">
+              Failed to load groups: {error}
+            </p>
+          )}
+          {!error && groups.length === 0 && (
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              You haven&apos;t joined any groups yet. Create one or join with an invite code below.
+            </p>
+          )}
+          <ul className="space-y-2">
+            {groups.map((group) => (
+              <li key={group.id}>
+                <Link
+                  href={`/groups/${group.id}`}
+                  className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-3 hover:border-neutral-400 hover:shadow-sm transition dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-600"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                      {group.name}
+                    </p>
+                    <p className="mt-0.5 font-mono text-xs text-neutral-500 dark:text-neutral-400">
+                      {group.invite_code}
+                    </p>
+                  </div>
+                  <svg
+                    className="h-4 w-4 text-neutral-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
 
-        <section className="mb-10 rounded-xl border border-neutral-200 bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-          <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-            Create a group
+        <hr className="border-neutral-200 dark:border-neutral-800" />
+
+        {/* Create Group */}
+        <section>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-3">
+            Create a New Group
           </h2>
           <CreateGroupForm />
         </section>
 
+        <hr className="border-neutral-200 dark:border-neutral-800" />
+
+        {/* Join Group */}
         <section>
-          <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-            Your groups
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-3">
+            Join a Group
           </h2>
-          {groups.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-neutral-300 bg-neutral-100/80 px-4 py-8 text-center text-sm text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900/50 dark:text-neutral-400">
-              You are not in any groups yet. Create one above to get started.
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-3">
-              {groups.map((g) => (
-                <li key={g.id}>
-                  <Link
-                    href={`/groups/${g.id}`}
-                    className="flex flex-col rounded-lg border border-neutral-200 bg-white px-4 py-4 transition hover:border-neutral-400 hover:shadow-sm dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-600 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <span className="font-medium text-neutral-900 dark:text-neutral-100">
-                      {g.name}
-                    </span>
-                    <span className="mt-2 font-mono text-xs text-neutral-500 sm:mt-0">
-                      Invite: {g.invite_code}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
+          <JoinGroupForm />
         </section>
       </main>
     </div>

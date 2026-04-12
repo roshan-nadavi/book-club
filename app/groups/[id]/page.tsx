@@ -37,23 +37,46 @@ export default async function GroupPage({
 
   const { group } = result;
 
-  // Fetch books and group-level messages directly via Supabase
-  const [{ data: bookRows }, { data: messageRows }] = await Promise.all([
-    supabase
-      .from("books")
-      .select("id, group_id, title, author, total_chapters, created_at")
-      .eq("group_id", id)
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("discussions")
-      .select("id, group_id, book_id, sender_id, content, created_at")
-      .eq("group_id", id)
-      .is("book_id", null)
-      .order("created_at", { ascending: true }),
-  ]);
+  // Fetch books, group-level messages, and current user's profile in parallel
+  const [{ data: bookRows }, { data: rawMessages }, { data: currentProfile }] =
+    await Promise.all([
+      supabase
+        .from("books")
+        .select("id, group_id, title, author, total_chapters, created_at")
+        .eq("group_id", id)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("discussions")
+        .select("id, group_id, book_id, sender_id, content, created_at")
+        .eq("group_id", id)
+        .is("book_id", null)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("profiles")
+        .select("username")
+        .eq("id", user.id)
+        .single(),
+    ]);
 
   const books = bookRows ?? [];
-  const messages = messageRows ?? [];
+  const messagesRaw = rawMessages ?? [];
+
+  // Collect unique sender IDs to batch-fetch usernames
+  const senderIds = [...new Set(messagesRaw.map((m) => m.sender_id).filter(Boolean))] as string[];
+  const { data: profileRows } = senderIds.length
+    ? await supabase.from("profiles").select("id, username").in("id", senderIds)
+    : { data: [] };
+
+  const usernameMap = Object.fromEntries(
+    (profileRows ?? []).map((p) => [p.id, p.username ?? p.id])
+  );
+
+  const messages = messagesRaw.map((m) => ({
+    ...m,
+    sender_username: m.sender_id ? (usernameMap[m.sender_id] ?? m.sender_id) : "Unknown",
+  }));
+
+  const currentUserUsername = currentProfile?.username ?? user.email ?? user.id;
 
   return (
     <div className="flex flex-col h-screen bg-neutral-50 dark:bg-neutral-950">
@@ -81,7 +104,7 @@ export default async function GroupPage({
       <GroupSplitView
         groupId={id}
         currentUserId={user.id}
-        currentUserEmail={user.email ?? ""}
+        currentUserUsername={currentUserUsername}
         initialBooks={books}
         initialMessages={messages}
       />
