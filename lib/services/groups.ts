@@ -14,6 +14,25 @@ export type GroupDetail = {
   invite_code: string;
 };
 
+export type GroupBook = {
+  id: string;
+  group_id: string;
+  title: string;
+  author: string | null;
+  total_chapters: number | null;
+  created_at: string;
+};
+
+export type GroupMessage = {
+  id: string;
+  group_id: string;
+  book_id: string | null;
+  sender_id: string | null;
+  content: string;
+  created_at: string;
+  sender_username: string;
+};
+
 function generateInviteCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const bytes = new Uint8Array(12);
@@ -138,4 +157,96 @@ export async function createGroupWithMembership(
   }
 
   return { ok: true, groupId: group.id };
+}
+
+// ---------------------------------------------------------------------------
+// Fetch all data needed to render the group page
+// ---------------------------------------------------------------------------
+
+export type GroupPageData = {
+  books: GroupBook[];
+  messages: GroupMessage[];
+  currentUserUsername: string;
+};
+
+export type GetGroupPageDataResult =
+  | { ok: true; data: GroupPageData }
+  | { ok: false; kind: "error"; message: string };
+
+/**
+ * Fetch books, group-level messages (book_id IS NULL), and resolve all
+ * sender usernames for the group page in as few round-trips as possible.
+ *
+ * Queries:
+ *   1. Books + messages + current user profile (parallel).
+ *   2. Batch profile lookup for all message senders.
+ */
+export async function getGroupPageData(
+  client: SupabaseClient<Database>,
+  userId: string,
+  groupId: string
+): Promise<GetGroupPageDataResult> {
+  const [
+    { data: bookRows, error: bookError },
+    { data: rawMessages, error: msgError },
+    { data: currentProfile, error: profileError },
+  ] = await Promise.all([
+    client
+      .from("books")
+      .select("id, group_id, title, author, total_chapters, created_at")
+      .eq("group_id", groupId)
+      .order("created_at", { ascending: true }),
+    client
+      .from("discussions")
+      .select("id, group_id, book_id, sender_id, content, created_at")
+      .eq("group_id", groupId)
+      .is("book_id", null)
+      .order("created_at", { ascending: true }),
+    client.from("profiles").select("username").eq("id", userId).single(),
+  ]);
+
+  if (bookError) {
+    return { ok: false, kind: "error", message: bookError.message };
+  }
+  if (msgError) {
+    return { ok: false, kind: "error", message: msgError.message };
+  }
+  if (profileError) {
+    return { ok: false, kind: "error", message: profileError.message };
+  }
+
+  const messagesRaw = rawMessages ?? [];
+
+  // Batch-fetch usernames for all unique sender IDs
+  const senderIds = [
+    ...new Set(messagesRaw.map((m) => m.sender_id).filter(Boolean)),
+  ] as string[];
+
+  const { data: profileRows } = senderIds.length
+    ? await client
+        .from("profiles")
+        .select("id, username")
+        .in("id", senderIds)
+    : { data: [] };
+
+  const usernameMap = Object.fromEntries(
+    (profileRows ?? []).map((p) => [p.id, p.username ?? p.id])
+  );
+
+  const messages: GroupMessage[] = messagesRaw.map((m) => ({
+    ...m,
+    sender_username: m.sender_id
+      ? (usernameMap[m.sender_id] ?? m.sender_id)
+      : "Unknown",
+  }));
+
+  return {
+    ok: true,
+    data: {
+      books: bookRows ?? [],
+      messages,
+      currentUserUsername:
+        currentProfile?.username ?? "",
+    },
+  };
 }
