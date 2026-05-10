@@ -409,3 +409,184 @@ export async function postPrivateMessage(
 
   return { ok: true, messageId: data.id };
 }
+
+// ---------------------------------------------------------------------------
+// Fetch all data needed to render the private conversations page
+// ---------------------------------------------------------------------------
+
+export type GroupMemberSummary = {
+  user_id: string;
+  username: string;
+};
+
+export type PrivateConversationsPageData = {
+  book: {
+    id: string;
+    group_id: string;
+    title: string;
+    author: string | null;
+    total_chapters: number | null;
+    created_at: string;
+  };
+  groupName: string;
+  currentUserUsername: string;
+  allGroupMembers: GroupMemberSummary[];
+  privateRooms: PrivateChatRoom[];
+};
+
+export type GetPrivateConversationsPageDataResult =
+  | { ok: true; data: PrivateConversationsPageData }
+  | { ok: false; kind: "not_found" | "not_member" | "error"; message: string };
+
+/**
+ * Fetch all data required by the private conversations page:
+ *   - The book
+ *   - Membership verification
+ *   - Group name
+ *   - All group members with usernames (for the "create group" form)
+ *   - All private chat rooms the user belongs to for this book, with members
+ *   - The current user's username
+ *
+ * Queries:
+ *   1. Book row.
+ *   2. Membership check.
+ *   3. Group info + all membership rows + current user profile + user's room IDs (parallel).
+ *   4. Batch-fetch all member profiles (for the create-room form).
+ *   5. If the user has rooms: fetch room rows with members, then batch-fetch usernames.
+ */
+export async function getPrivateConversationsPageData(
+  client: SupabaseClient<Database>,
+  userId: string,
+  bookId: string
+): Promise<GetPrivateConversationsPageDataResult> {
+  // 1. Fetch the book
+  const { data: book, error: bookError } = await client
+    .from("books")
+    .select("id, group_id, title, author, total_chapters, created_at")
+    .eq("id", bookId)
+    .single();
+
+  if (bookError || !book) {
+    return { ok: false, kind: "not_found", message: "Book not found." };
+  }
+
+  // 2. Verify membership
+  const { data: membership, error: membershipError } = await client
+    .from("memberships")
+    .select("group_id")
+    .eq("user_id", userId)
+    .eq("group_id", book.group_id)
+    .maybeSingle();
+
+  if (membershipError) {
+    return { ok: false, kind: "error", message: membershipError.message };
+  }
+  if (!membership) {
+    return { ok: false, kind: "not_member", message: "You are not a member of this group." };
+  }
+
+  // 3. Parallel: group info, all membership rows, current user profile, user's room IDs
+  const [
+    { data: group, error: groupError },
+    { data: membershipRows, error: membershipsError },
+    { data: currentProfile, error: profileError },
+    { data: privateRoomRows, error: privateRoomRowsError },
+  ] = await Promise.all([
+    client.from("groups").select("id, name").eq("id", book.group_id).single(),
+    client.from("memberships").select("user_id").eq("group_id", book.group_id),
+    client.from("profiles").select("username").eq("id", userId).single(),
+    client.from("private_chat_members").select("room_id").eq("user_id", userId),
+  ]);
+
+  if (groupError) {
+    return { ok: false, kind: "error", message: groupError.message };
+  }
+  if (membershipsError) {
+    return { ok: false, kind: "error", message: membershipsError.message };
+  }
+  if (profileError) {
+    return { ok: false, kind: "error", message: profileError.message };
+  }
+  if (privateRoomRowsError) {
+    return { ok: false, kind: "error", message: privateRoomRowsError.message };
+  }
+
+  // 4. Batch-fetch all group member profiles (needed for the create-room form)
+  const memberUserIds = (membershipRows ?? []).map((m) => m.user_id);
+
+  const { data: memberProfiles, error: memberProfilesError } = memberUserIds.length
+    ? await client.from("profiles").select("id, username").in("id", memberUserIds)
+    : { data: [], error: null };
+
+  if (memberProfilesError) {
+    return { ok: false, kind: "error", message: memberProfilesError.message };
+  }
+
+  const allGroupMembers: GroupMemberSummary[] = (memberProfiles ?? []).map((p) => ({
+    user_id: p.id,
+    username: p.username ?? p.id,
+  }));
+
+  // 5. Fetch private rooms the user belongs to for this book
+  const myRoomIds = (privateRoomRows ?? []).map((r) => r.room_id);
+
+  let privateRooms: PrivateChatRoom[] = [];
+
+  if (myRoomIds.length > 0) {
+    const { data: rooms, error: roomsError } = await client
+      .from("private_chat_rooms")
+      .select("id, book_id, group_name, created_at, private_chat_members(user_id)")
+      .eq("book_id", bookId)
+      .in("id", myRoomIds)
+      .order("created_at", { ascending: true });
+
+    if (roomsError) {
+      return { ok: false, kind: "error", message: roomsError.message };
+    }
+
+    if (rooms && rooms.length > 0) {
+      // Batch-fetch usernames for all room members
+      const allMemberIds = [
+        ...new Set(
+          rooms.flatMap((r) =>
+            (r.private_chat_members as { user_id: string }[]).map((m) => m.user_id)
+          )
+        ),
+      ];
+
+      const { data: roomProfileRows, error: roomProfilesError } = allMemberIds.length
+        ? await client.from("profiles").select("id, username").in("id", allMemberIds)
+        : { data: [], error: null };
+
+      if (roomProfilesError) {
+        return { ok: false, kind: "error", message: roomProfilesError.message };
+      }
+
+      const usernameMap = Object.fromEntries(
+        (roomProfileRows ?? []).map((p) => [p.id, p.username ?? null])
+      );
+
+      privateRooms = rooms.map((room) => ({
+        id: room.id,
+        book_id: room.book_id,
+        group_name: room.group_name,
+        created_at: room.created_at,
+        members: (room.private_chat_members as { user_id: string }[]).map((m) => ({
+          user_id: m.user_id,
+          username: usernameMap[m.user_id] ?? null,
+        })),
+      }));
+    }
+  }
+
+  return {
+    ok: true,
+    data: {
+      book,
+      groupName: group?.name ?? "Group",
+      currentUserUsername: currentProfile?.username ?? userId,
+      allGroupMembers,
+      privateRooms,
+    },
+  };
+}
