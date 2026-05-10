@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import Link from "next/link";
 
 type ProgressEntry = {
   user_id: string;
@@ -270,7 +271,7 @@ export default function BookSplitView({
           )}
         </div>
 
-        {/* My progress updater — pinned to bottom */}
+        {/* My progress updater + Private Conversations link — pinned to bottom */}
         <div className="shrink-0 border-t border-neutral-200 dark:border-neutral-800 px-4 py-3 bg-neutral-50 dark:bg-neutral-950">
           <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">
             Update Your Progress
@@ -308,6 +309,29 @@ export default function BookSplitView({
           {progressSuccess && (
             <p className="mt-1.5 text-xs text-green-600 dark:text-green-400">✓ Progress saved!</p>
           )}
+
+          {/* Private Conversations button */}
+          <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700">
+            <Link
+              href={`/books/${bookId}/private-conversations`}
+              className="flex items-center justify-center gap-2 w-full rounded-lg border border-neutral-300 dark:border-neutral-700 px-3 py-2 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition"
+            >
+              <svg
+                className="w-3.5 h-3.5 shrink-0"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                />
+              </svg>
+              Private Conversations
+            </Link>
+          </div>
         </div>
       </div>
 
