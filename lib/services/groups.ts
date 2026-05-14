@@ -12,6 +12,13 @@ export type GroupDetail = {
   id: string;
   name: string;
   invite_code: string;
+  admin_id: string | null;
+  admin_username: string | null;
+};
+
+export type GroupMember = {
+  user_id: string;
+  username: string | null;
 };
 
 export type GroupBook = {
@@ -84,18 +91,21 @@ export type GetGroupForMemberResult =
 
 /**
  * Load a group only if the user is a member.
+ * Also resolves the admin's username via a parallel profile lookup.
  *
- * Single query: start from `memberships` filtered by both `user_id` and
- * `group_id`, inner-join `groups` to pull the group fields in the same call.
+ * Queries:
+ *   1. Membership check + group fields (including admin_id) via inner join.
+ *   2. Admin username lookup from profiles (only if admin_id is set).
  */
 export async function getGroupForMember(
   client: SupabaseClient<Database>,
   userId: string,
   groupId: string
 ): Promise<GetGroupForMemberResult> {
+  // 1. Membership check + group core fields
   const { data, error } = await client
     .from("memberships")
-    .select("groups!inner(id, name, invite_code)")
+    .select("groups!inner(id, name, invite_code, admin_id)")
     .eq("user_id", userId)
     .eq("group_id", groupId)
     .maybeSingle();
@@ -107,12 +117,110 @@ export async function getGroupForMember(
     return { ok: false, kind: "not_member" };
   }
 
-  const group = data.groups as unknown as GroupDetail;
-  if (!group) {
+  const rawGroup = data.groups as unknown as {
+    id: string;
+    name: string;
+    invite_code: string;
+    admin_id: string | null;
+  };
+
+  if (!rawGroup) {
     return { ok: false, kind: "group_missing" };
   }
 
+  // 2. Fetch admin username if admin_id is present
+  const adminProfileResult = rawGroup.admin_id
+    ? await client
+        .from("profiles")
+        .select("username")
+        .eq("id", rawGroup.admin_id)
+        .single()
+    : { data: null, error: null };
+
+  const group: GroupDetail = {
+    id: rawGroup.id,
+    name: rawGroup.name,
+    invite_code: rawGroup.invite_code,
+    admin_id: rawGroup.admin_id,
+    admin_username:
+      (adminProfileResult.data as { username: string | null } | null)
+        ?.username ?? null,
+  };
+
   return { ok: true, group };
+}
+
+// ---------------------------------------------------------------------------
+// Get all members of a group (fetched lazily on demand, not on page load)
+// ---------------------------------------------------------------------------
+
+export type GetGroupMembersResult =
+  | { ok: true; members: GroupMember[] }
+  | { ok: false; kind: "not_member" | "error"; message: string };
+
+/**
+ * Return all members of a group with their usernames.
+ * Verifies the requesting user is a member before returning data.
+ *
+ * Queries:
+ *   1. Membership check.
+ *   2. All user_ids in the group.
+ *   3. Batch profile lookup for usernames.
+ */
+export async function getGroupMembers(
+  client: SupabaseClient<Database>,
+  userId: string,
+  groupId: string
+): Promise<GetGroupMembersResult> {
+  // 1. Confirm the requesting user is a member
+  const { data: membership, error: membershipError } = await client
+    .from("memberships")
+    .select("group_id")
+    .eq("user_id", userId)
+    .eq("group_id", groupId)
+    .maybeSingle();
+
+  if (membershipError) {
+    return { ok: false, kind: "error", message: membershipError.message };
+  }
+  if (!membership) {
+    return {
+      ok: false,
+      kind: "not_member",
+      message: "You are not a member of this group.",
+    };
+  }
+
+  // 2. Fetch all member user_ids
+  const { data: membershipRows, error: membersError } = await client
+    .from("memberships")
+    .select("user_id")
+    .eq("group_id", groupId);
+
+  if (membersError) {
+    return { ok: false, kind: "error", message: membersError.message };
+  }
+
+  const memberUserIds = (membershipRows ?? []).map((m) => m.user_id);
+
+  // 3. Batch-fetch usernames
+  const { data: profileRows, error: profilesError } = memberUserIds.length
+    ? await client
+        .from("profiles")
+        .select("id, username")
+        .in("id", memberUserIds)
+    : { data: [], error: null };
+
+  if (profilesError) {
+    return { ok: false, kind: "error", message: profilesError.message };
+  }
+
+  const members: GroupMember[] = (profileRows ?? []).map((p) => ({
+    user_id: p.id,
+    username: p.username ?? null,
+  }));
+
+  return { ok: true, members };
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +261,10 @@ export async function createGroupWithMembership(
     .insert({ user_id: userId, group_id: group.id });
 
   if (memberError) {
-    return { ok: false, message: memberError.message ?? "Could not join group." };
+    return {
+      ok: false,
+      message: memberError.message ?? "Could not join group.",
+    };
   }
 
   return { ok: true, groupId: group.id };
@@ -245,8 +356,7 @@ export async function getGroupPageData(
     data: {
       books: bookRows ?? [],
       messages,
-      currentUserUsername:
-        currentProfile?.username ?? "",
+      currentUserUsername: currentProfile?.username ?? "",
     },
   };
 }

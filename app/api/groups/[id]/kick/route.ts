@@ -5,6 +5,9 @@ import { kickMember } from "@/lib/services/memberships";
 /**
  * POST /api/groups/[id]/kick
  * Body: { user_id: string }  ← the member to remove
+ *
+ * On success returns { ok: true, newInviteCode: string } so the client can
+ * update the displayed invite code without a full page reload.
  */
 export async function POST(
   request: Request,
@@ -31,12 +34,13 @@ export async function POST(
 
   if (!result.ok) {
     const status =
-      result.kind === "cannot_kick_self" ? 400
-      : result.kind === "not_admin"      ? 403
-      : result.kind === "not_member"     ? 404
+      result.kind === "cannot_kick_self"   ? 400
+      : result.kind === "not_admin"        ? 403
+      : result.kind === "not_member"       ? 404
+      : result.kind === "invite_regen_failed" ? 500
       : 500;
     return NextResponse.json({ error: result.message }, { status });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, newInviteCode: result.newInviteCode });
 }

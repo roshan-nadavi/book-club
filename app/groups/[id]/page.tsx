@@ -76,8 +76,11 @@ export default async function GroupPage({
 
       <GroupSplitView
         groupId={id}
+        adminId={group.admin_id ?? ""}
+        adminUsername={group.admin_username ?? ""}
         currentUserId={user.id}
         currentUserUsername={currentUserUsername || user.email || user.id}
+        initialInviteCode={group.invite_code}
         initialBooks={books}
         initialMessages={messages}
       />

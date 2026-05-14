@@ -53,15 +53,58 @@ export async function joinGroupByInviteCode(
 }
 
 // ---------------------------------------------------------------------------
+// Regenerate invite code (internal helper)
+// ---------------------------------------------------------------------------
+
+function generateInviteCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
+}
+
+/**
+ * Generate a new unique 8-character invite code for a group.
+ * Retries up to 5 times on the rare chance of a collision.
+ *
+ * Returns the new code on success, or an error string.
+ */
+async function regenerateInviteCode(
+  client: SupabaseClient<Database>,
+  groupId: string
+): Promise<{ ok: true; newCode: string } | { ok: false; message: string }> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const newCode = generateInviteCode();
+    const { error } = await client
+      .from("groups")
+      .update({ invite_code: newCode })
+      .eq("id", groupId);
+
+    if (!error) {
+      return { ok: true, newCode };
+    }
+
+    // 23505 = unique_violation — the generated code already exists, retry
+    if (error.code !== "23505") {
+      return { ok: false, message: error.message };
+    }
+  }
+
+  return { ok: false, message: "Could not generate a unique invite code. Please try again." };
+}
+
+// ---------------------------------------------------------------------------
 // Kick a member (admin only)
 // ---------------------------------------------------------------------------
 
 export type KickMemberResult =
-  | { ok: true }
-  | { ok: false; kind: "not_admin" | "not_member" | "cannot_kick_self" | "error"; message: string };
+  | { ok: true; newInviteCode: string }
+  | { ok: false; kind: "not_admin" | "not_member" | "cannot_kick_self" | "invite_regen_failed" | "error"; message: string };
 
 /**
- * Remove `targetUserId` from the group.
+ * Remove `targetUserId` from the group, then regenerate the invite code so
+ * the kicked member cannot immediately rejoin with the old code.
+ *
  * Only the group admin may do this, and admins cannot kick themselves.
  *
  * Single read query: start from `groups` filtered by id, left-join
@@ -97,6 +140,7 @@ export async function kickMember(
     return { ok: false, kind: "not_member", message: "That user is not a member of this group." };
   }
 
+  // Delete the membership
   const { error: deleteError } = await client
     .from("memberships")
     .delete()
@@ -107,5 +151,13 @@ export async function kickMember(
     return { ok: false, kind: "error", message: deleteError.message };
   }
 
-  return { ok: true };
+  // Regenerate the invite code so the kicked member cannot rejoin with the old code
+  const regenResult = await regenerateInviteCode(client, groupId);
+  if (!regenResult.ok) {
+    // Kick succeeded but code regen failed — surface this distinctly so the
+    // caller can inform the user and they can manually refresh
+    return { ok: false, kind: "invite_regen_failed", message: regenResult.message };
+  }
+
+  return { ok: true, newInviteCode: regenResult.newCode };
 }

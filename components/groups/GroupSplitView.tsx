@@ -22,18 +22,28 @@ type Message = {
   sender_username?: string;
 };
 
+type Member = {
+  user_id: string;
+  username: string | null;
+};
+
 interface Props {
   groupId: string;
+  adminId: string;
+  adminUsername: string;
   currentUserId: string;
   currentUserUsername: string;
+  initialInviteCode: string;
   initialBooks: Book[];
   initialMessages: Message[];
 }
 
 export default function GroupSplitView({
   groupId,
+  adminId,
   currentUserId,
   currentUserUsername,
+  initialInviteCode,
   initialBooks,
   initialMessages,
 }: Props) {
@@ -55,6 +65,26 @@ export default function GroupSplitView({
   const [messageContent, setMessageContent] = useState("");
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Members state — loaded lazily when either modal is opened
+  const [members, setMembers] = useState<Member[]>([]);
+  const [membersLoaded, setMembersLoaded] = useState(false);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [membersError, setMembersError] = useState<string | null>(null);
+
+  // Modal visibility
+  const [showMembersModal, setShowMembersModal] = useState(false);
+  const [showKickModal, setShowKickModal] = useState(false);
+
+  // Confirm-kick sub-modal
+  const [confirmKickTarget, setConfirmKickTarget] = useState<Member | null>(null);
+  const [kicking, setKicking] = useState(false);
+  const [kickError, setKickError] = useState<string | null>(null);
+
+  // Invite code (can update after a successful kick)
+  const [inviteCode, setInviteCode] = useState(initialInviteCode);
+
+  const isAdmin = currentUserId === adminId;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -99,6 +129,25 @@ export default function GroupSplitView({
       window.removeEventListener("touchend", onTouchEnd);
     };
   }, [isDragging]);
+
+  // ── Lazy member fetch ─────────────────────────────────────
+
+  async function loadMembers() {
+    if (membersLoaded) return; // already fetched — reuse cached list
+    setMembersLoading(true);
+    setMembersError(null);
+
+    const res = await fetch(`/api/groups/${groupId}/members`);
+    const data = await res.json();
+
+    if (!res.ok) {
+      setMembersError(data.error ?? "Failed to load members.");
+    } else {
+      setMembers(data.members ?? []);
+      setMembersLoaded(true);
+    }
+    setMembersLoading(false);
+  }
 
   // ── Add Book ──────────────────────────────────────────────
 
@@ -182,6 +231,67 @@ export default function GroupSplitView({
     setSending(false);
   }
 
+  // ── Member modals ─────────────────────────────────────────
+
+  async function openMembersModal() {
+    setShowMembersModal(true);
+    await loadMembers();
+  }
+
+  async function openKickModal() {
+    setKickError(null);
+    setConfirmKickTarget(null);
+    setShowKickModal(true);
+    await loadMembers();
+  }
+
+  // ── Kick ──────────────────────────────────────────────────
+
+  function requestKick(member: Member) {
+    setKickError(null);
+    setConfirmKickTarget(member);
+  }
+
+  async function confirmKick() {
+    if (!confirmKickTarget) return;
+    setKicking(true);
+    setKickError(null);
+
+    const res = await fetch(`/api/groups/${groupId}/kick`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: confirmKickTarget.user_id }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      setKickError(data.error ?? "Failed to kick member.");
+      setKicking(false);
+      setConfirmKickTarget(null);
+      return;
+    }
+
+    // Remove the member from the cached list so both modals stay in sync
+    setMembers((prev) =>
+      prev.filter((m) => m.user_id !== confirmKickTarget.user_id)
+    );
+
+    // Update the displayed invite code with the newly generated one
+    if (data.newInviteCode) {
+      setInviteCode(data.newInviteCode);
+    }
+
+    setKicking(false);
+    setConfirmKickTarget(null);
+  }
+
+  function cancelKick() {
+    setConfirmKickTarget(null);
+  }
+
+  // ── Helpers ───────────────────────────────────────────────
+
   function formatTime(iso: string) {
     return new Date(iso).toLocaleString(undefined, {
       month: "short",
@@ -244,7 +354,7 @@ export default function GroupSplitView({
             )}
           </div>
 
-          {/* Add Book button — ~1/4 width of left panel */}
+          {/* Add Book button */}
           <div className="shrink-0 px-4 py-3 border-t border-neutral-100 dark:border-neutral-800">
             <button
               onClick={openAddBook}
@@ -277,10 +387,30 @@ export default function GroupSplitView({
 
         {/* RIGHT PANEL — Messages */}
         <div className="flex flex-col flex-1 overflow-hidden bg-neutral-50 dark:bg-neutral-950">
-          <div className="shrink-0 px-4 py-3 border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+          {/* Header row: title + member/kick buttons */}
+          <div className="shrink-0 px-4 py-3 border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex items-center justify-between gap-3">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               Group Discussion
             </h2>
+            <div className="flex items-center gap-2">
+              {/* List All Members — visible to everyone */}
+              <button
+                onClick={openMembersModal}
+                className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition"
+              >
+                List All Members
+              </button>
+
+              {/* Kick Members — visible only to admin */}
+              {isAdmin && (
+                <button
+                  onClick={openKickModal}
+                  className="rounded-lg border border-red-300 dark:border-red-700 bg-white dark:bg-neutral-800 px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 transition"
+                >
+                  Kick Members
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
@@ -343,7 +473,7 @@ export default function GroupSplitView({
         </div>
       </div>
 
-      {/* ADD BOOK MODAL — centered over the left panel */}
+      {/* ── ADD BOOK MODAL ──────────────────────────────────── */}
       {showAddBook && (
         <div
           className="fixed inset-0 z-50 flex items-center bg-black/40 dark:bg-black/60"
@@ -435,6 +565,193 @@ export default function GroupSplitView({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── LIST ALL MEMBERS MODAL ──────────────────────────── */}
+      {showMembersModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 dark:bg-black/70 px-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowMembersModal(false); }}
+        >
+          <div className="relative bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-700 w-full max-w-xs flex flex-col max-h-[70vh]">
+            <div className="shrink-0 flex items-center justify-between px-5 pt-5 pb-3 border-b border-neutral-100 dark:border-neutral-800">
+              <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                Members
+                {!membersLoading && (
+                  <span className="ml-2 text-xs font-normal text-neutral-400">
+                    ({members.length})
+                  </span>
+                )}
+              </h3>
+              <button
+                onClick={() => setShowMembersModal(false)}
+                className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition"
+                aria-label="Close"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {membersLoading && (
+                <p className="px-5 py-6 text-sm text-neutral-400 dark:text-neutral-500 text-center">
+                  Loading…
+                </p>
+              )}
+              {membersError && (
+                <p className="px-5 py-6 text-sm text-red-500 text-center">
+                  {membersError}
+                </p>
+              )}
+              {!membersLoading && !membersError && (
+                <ul className="divide-y divide-neutral-100 dark:divide-neutral-800 px-2 py-2">
+                  {members.map((member) => {
+                    const isMe = member.user_id === currentUserId;
+                    const isMemberAdmin = member.user_id === adminId;
+                    const displayName = member.username ?? "Unknown";
+                    return (
+                      <li key={member.user_id} className="flex items-center gap-2.5 px-3 py-2.5">
+                        <div className="w-7 h-7 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center shrink-0">
+                          <span className="text-xs font-semibold text-neutral-600 dark:text-neutral-300 uppercase">
+                            {displayName[0]}
+                          </span>
+                        </div>
+                        <span className="text-sm text-neutral-800 dark:text-neutral-200 truncate">
+                          {displayName}
+                          {isMe && (
+                            <span className="ml-1 text-xs text-neutral-400">(you)</span>
+                          )}
+                        </span>
+                        {isMemberAdmin && (
+                          <span className="ml-auto shrink-0 text-xs font-semibold text-red-500 dark:text-red-400">
+                            (admin)
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── KICK MEMBERS MODAL (admin only) ─────────────────── */}
+      {showKickModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 dark:bg-black/70 px-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowKickModal(false);
+              setKickError(null);
+            }
+          }}
+        >
+          <div className="relative bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-700 w-full max-w-xs flex flex-col max-h-[70vh]">
+            <div className="shrink-0 flex items-center justify-between px-5 pt-5 pb-3 border-b border-neutral-100 dark:border-neutral-800">
+              <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                Kick Members
+              </h3>
+              <button
+                onClick={() => { setShowKickModal(false); setKickError(null); }}
+                className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition"
+                aria-label="Close"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {kickError && (
+              <div className="mx-4 mt-3">
+                <p className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded px-3 py-2">
+                  {kickError}
+                </p>
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto">
+              {membersLoading && (
+                <p className="px-5 py-6 text-sm text-neutral-400 dark:text-neutral-500 text-center">
+                  Loading…
+                </p>
+              )}
+              {membersError && (
+                <p className="px-5 py-6 text-sm text-red-500 text-center">
+                  {membersError}
+                </p>
+              )}
+              {!membersLoading && !membersError && (
+                <ul className="divide-y divide-neutral-100 dark:divide-neutral-800 px-2 py-2">
+                  {members.filter((m) => m.user_id !== adminId).map((member) => {
+                    const displayName = member.username ?? "Unknown";
+                    return (
+                      <li key={member.user_id} className="flex items-center gap-2.5 px-3 py-2.5">
+                        <div className="w-7 h-7 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center shrink-0">
+                          <span className="text-xs font-semibold text-neutral-600 dark:text-neutral-300 uppercase">
+                            {displayName[0]}
+                          </span>
+                        </div>
+                        <span className="flex-1 text-sm text-neutral-800 dark:text-neutral-200 truncate">
+                          {displayName}
+                        </span>
+                        <button
+                          onClick={() => requestKick(member)}
+                          className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900 transition"
+                          aria-label={`Kick ${displayName}`}
+                        >
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
+                          </svg>
+                        </button>
+                      </li>
+                    );
+                  })}
+                  {members.filter((m) => m.user_id !== adminId).length === 0 && (
+                    <li className="px-4 py-6 text-center text-sm text-neutral-400 dark:text-neutral-500">
+                      No other members to kick.
+                    </li>
+                  )}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CONFIRM KICK SUB-MODAL ───────────────────────────── */}
+      {confirmKickTarget && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 dark:bg-black/75 px-4">
+          <div className="bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-700 w-full max-w-xs p-6 flex flex-col gap-4">
+            <p className="text-sm text-neutral-800 dark:text-neutral-200 text-center leading-relaxed">
+              Are you sure you want to kick out{" "}
+              <span className="font-semibold">
+                {confirmKickTarget.username ?? "this member"}
+              </span>
+              ?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={cancelKick}
+                disabled={kicking}
+                className="flex-1 rounded-lg border border-neutral-300 dark:border-neutral-700 px-3 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-50 transition"
+              >
+                No
+              </button>
+              <button
+                onClick={confirmKick}
+                disabled={kicking}
+                className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                {kicking ? "Kicking…" : "Yes"}
+              </button>
+            </div>
           </div>
         </div>
       )}
