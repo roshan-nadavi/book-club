@@ -5,6 +5,7 @@ import { listGroupsForUser } from "@/lib/services/groups";
 import LogoutButton from "@/components/auth/LogoutButton";
 import CreateGroupForm from "@/components/groups/CreateGroupForm";
 import JoinGroupForm from "@/components/groups/JoinGroupForm";
+import CopyButton from "@/components/ui/CopyButton";
 
 export default async function HomePage({
   searchParams,
@@ -58,21 +59,19 @@ export default async function HomePage({
           )}
           <ul className="space-y-2">
             {groups.map((group) => (
-              <li key={group.id}>
+              <li
+                key={group.id}
+                className="rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900 hover:border-neutral-400 hover:shadow-sm dark:hover:border-neutral-600 transition"
+              >
                 <Link
                   href={`/groups/${group.id}`}
-                  className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-3 hover:border-neutral-400 hover:shadow-sm transition dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-600"
+                  className="flex items-center justify-between px-4 pt-3 pb-2"
                 >
-                  <div>
-                    <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                      {group.name}
-                    </p>
-                    <p className="mt-0.5 font-mono text-xs text-neutral-500 dark:text-neutral-400">
-                      {group.invite_code}
-                    </p>
-                  </div>
+                  <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                    {group.name}
+                  </p>
                   <svg
-                    className="h-4 w-4 text-neutral-400"
+                    className="h-4 w-4 shrink-0 text-neutral-400"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -81,6 +80,12 @@ export default async function HomePage({
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                   </svg>
                 </Link>
+                <div className="flex items-center gap-1.5 px-4 pb-3">
+                  <span className="font-mono text-xs text-neutral-500 dark:text-neutral-400">
+                    {group.invite_code}
+                  </span>
+                  <CopyButton text={group.invite_code} />
+                </div>
               </li>
             ))}
           </ul>
