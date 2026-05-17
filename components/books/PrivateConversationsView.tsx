@@ -364,7 +364,7 @@ export default function PrivateConversationsView({
         </div>
 
         {/* ── RIGHT PANEL — Messages ────────────────────── */}
-        <div className="flex flex-col flex-1 overflow-hidden bg-neutral-50 dark:bg-neutral-950">
+        <div className="flex flex-col flex-1 overflow-hidden bg-background">
           {selectedRoom ? (
             <>
               {/* Header */}

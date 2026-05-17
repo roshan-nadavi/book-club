@@ -386,7 +386,7 @@ export default function GroupSplitView({
         </div>
 
         {/* RIGHT PANEL — Messages */}
-        <div className="flex flex-col flex-1 overflow-hidden bg-neutral-50 dark:bg-neutral-950">
+        <div className="flex flex-col flex-1 overflow-hidden bg-background">
           {/* Header row: title + member/kick buttons */}
           <div className="shrink-0 px-4 py-3 border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex items-center justify-between gap-3">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">

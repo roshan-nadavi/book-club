@@ -272,7 +272,7 @@ export default function BookSplitView({
         </div>
 
         {/* My progress updater + Private Conversations link — pinned to bottom */}
-        <div className="shrink-0 border-t border-neutral-200 dark:border-neutral-800 px-4 py-3 bg-neutral-50 dark:bg-neutral-950">
+        <div className="shrink-0 border-t border-neutral-200 dark:border-neutral-800 px-4 py-3 bg-background">
           <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">
             Update Your Progress
           </p>
@@ -356,7 +356,7 @@ export default function BookSplitView({
       </div>
 
       {/* RIGHT PANEL — Book Discussion */}
-      <div className="flex flex-col flex-1 overflow-hidden bg-neutral-50 dark:bg-neutral-950">
+      <div className="flex flex-col flex-1 overflow-hidden bg-background">
         <div className="shrink-0 px-4 py-3 border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-900">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
             Book Discussion
