@@ -25,7 +25,7 @@ export default async function GroupPage({
   if (!result.ok) {
     if (result.kind === "error") {
       return (
-        <div className="min-h-screen bg-neutral-50 px-4 py-16 dark:bg-neutral-950">
+        <div className="min-h-screen bg-background px-4 py-16 dark:bg-neutral-950">
           <div className="mx-auto max-w-md rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
             Could not load this group: {result.message}
           </div>
@@ -41,7 +41,7 @@ export default async function GroupPage({
 
   if (!pageDataResult.ok) {
     return (
-      <div className="min-h-screen bg-neutral-50 px-4 py-16 dark:bg-neutral-950">
+      <div className="min-h-screen bg-background px-4 py-16 dark:bg-neutral-950">
         <div className="mx-auto max-w-md rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
           Could not load group data: {pageDataResult.message}
         </div>
@@ -52,7 +52,7 @@ export default async function GroupPage({
   const { books, messages, currentUserUsername } = pageDataResult.data;
 
   return (
-    <div className="flex flex-col h-screen bg-neutral-50 dark:bg-neutral-950">
+    <div className="flex flex-col h-screen bg-background dark:bg-neutral-950">
       <header className="shrink-0 border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
