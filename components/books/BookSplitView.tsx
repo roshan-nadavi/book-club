@@ -212,7 +212,7 @@ export default function BookSplitView({
     >
       {/* LEFT PANEL — Reading Progress */}
       <div
-        className="flex flex-col overflow-hidden border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900"
+        className="flex flex-col overflow-hidden border-r border-neutral-200 bg-surface"
         style={{ width: `${leftWidth}%` }}
       >
         <div className="shrink-0 px-4 py-3 border-b border-neutral-100 dark:border-neutral-800">
@@ -357,7 +357,7 @@ export default function BookSplitView({
 
       {/* RIGHT PANEL — Book Discussion */}
       <div className="flex flex-col flex-1 overflow-hidden bg-background">
-        <div className="shrink-0 px-4 py-3 border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+        <div className="shrink-0 px-4 py-3 border-b border-neutral-200 bg-surface">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
             Book Discussion
           </h2>
@@ -406,7 +406,7 @@ export default function BookSplitView({
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="shrink-0 border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-3">
+        <div className="shrink-0 border-t border-neutral-200 bg-surface px-4 py-3">
           <form onSubmit={handleSendMessage} className="flex gap-2">
             <input
               type="text"

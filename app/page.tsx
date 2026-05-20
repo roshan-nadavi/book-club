@@ -26,9 +26,9 @@ export default async function HomePage({
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+      <header className="border-b border-neutral-200 bg-surface">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-4">
-          <h1 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+          <h1 className="text-lg font-semibold text-neutral-900">
             📚 Book Club
           </h1>
           <LogoutButton />
@@ -61,7 +61,7 @@ export default async function HomePage({
             {groups.map((group) => (
               <li
                 key={group.id}
-                className="rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900 hover:border-neutral-400 hover:shadow-sm dark:hover:border-neutral-600 transition"
+                className="rounded-lg border border-neutral-200 bg-surface hover:border-neutral-400 hover:shadow-sm transition"
               >
                 <Link
                   href={`/groups/${group.id}`}

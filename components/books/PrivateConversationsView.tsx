@@ -273,7 +273,7 @@ export default function PrivateConversationsView({
       >
         {/* ── LEFT PANEL — Room List ─────────────────────── */}
         <div
-          className="flex flex-col overflow-hidden border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900"
+          className="flex flex-col overflow-hidden border-r border-neutral-200 bg-surface"
           style={{ width: `${leftWidth}%` }}
         >
           {/* Header with create button */}
@@ -439,7 +439,7 @@ export default function PrivateConversationsView({
               </div>
 
               {/* Message input */}
-              <div className="shrink-0 border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-3">
+              <div className="shrink-0 border-t border-neutral-200 bg-surface px-4 py-3">
                 <form onSubmit={handleSendMessage} className="flex gap-2">
                   <input
                     type="text"

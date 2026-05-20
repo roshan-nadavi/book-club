@@ -53,7 +53,7 @@ export default async function GroupPage({
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      <header className="shrink-0 border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+      <header className="shrink-0 border-b border-neutral-200 bg-surface">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <Link
