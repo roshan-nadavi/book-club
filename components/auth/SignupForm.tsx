@@ -44,7 +44,7 @@ export default function SignupForm() {
   return (
     <div className="w-full max-w-sm">
       <div className="mb-8 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight text-neutral-900 dark:text-neutral-100">
+        <h1 className="text-2xl font-semibold tracking-tight text-black">
           Create an account
         </h1>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
@@ -120,7 +120,7 @@ export default function SignupForm() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-lg bg-neutral-900 dark:bg-neutral-100 text-neutral-100 dark:text-neutral-900 text-sm font-medium py-2.5 hover:bg-neutral-700 dark:hover:bg-neutral-300 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          className="w-full rounded-lg bg-primary text-black text-sm font-medium py-2.5 hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition"
         >
           {loading ? "Creating account…" : "Create account"}
         </button>
@@ -130,7 +130,7 @@ export default function SignupForm() {
         Already have an account?{" "}
         <Link
           href="/login"
-          className="font-medium text-neutral-900 dark:text-neutral-100 underline underline-offset-4 hover:text-neutral-600 dark:hover:text-neutral-300 transition"
+          className="font-medium text-black underline underline-offset-4 hover:text-neutral-600 transition"
         >
           Sign in
         </Link>

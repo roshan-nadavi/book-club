@@ -53,7 +53,7 @@ export default async function GroupPage({
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      <header className="shrink-0 border-b border-neutral-200 bg-surface">
+      <header className="shrink-0 border-b border-neutral-300 bg-header">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <Link
@@ -63,7 +63,7 @@ export default async function GroupPage({
               ← Groups
             </Link>
             <span className="text-neutral-300 dark:text-neutral-700">/</span>
-            <h1 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+            <h1 className="text-sm font-semibold text-black">
               {group.name}
             </h1>
             <span className="hidden sm:inline font-mono text-xs text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded">

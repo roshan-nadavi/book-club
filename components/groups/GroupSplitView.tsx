@@ -312,10 +312,10 @@ export default function GroupSplitView({
       >
         {/* LEFT PANEL — Books */}
         <div
-          className="flex flex-col overflow-hidden border-r border-neutral-200 bg-surface"
+          className="flex flex-col overflow-hidden border-r border-neutral-200 bg-background"
           style={{ width: `${leftWidth}%` }}
         >
-          <div className="shrink-0 px-4 py-3 border-b border-neutral-100 dark:border-neutral-800">
+          <div className="shrink-0 px-4 py-3 border-b border-neutral-200 bg-surface">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               Books
             </h2>
@@ -334,7 +334,7 @@ export default function GroupSplitView({
                       href={`/books/${book.id}`}
                       className="flex flex-col gap-0.5 px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition group"
                     >
-                      <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100 group-hover:text-neutral-700 dark:group-hover:text-neutral-200 leading-snug">
+                      <span className="text-sm font-medium text-black group-hover:text-neutral-700 leading-snug">
                         {book.title}
                       </span>
                       {book.author && (
@@ -452,7 +452,7 @@ export default function GroupSplitView({
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="shrink-0 border-t border-neutral-200 bg-surface px-4 py-3">
+          <div className="shrink-0 border-t border-neutral-200 bg-background px-4 py-3">
             <form onSubmit={handleSendMessage} className="flex gap-2">
               <input
                 type="text"

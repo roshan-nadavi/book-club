@@ -212,10 +212,10 @@ export default function BookSplitView({
     >
       {/* LEFT PANEL — Reading Progress */}
       <div
-        className="flex flex-col overflow-hidden border-r border-neutral-200 bg-surface"
+        className="flex flex-col overflow-hidden border-r border-neutral-200 bg-background"
         style={{ width: `${leftWidth}%` }}
       >
-        <div className="shrink-0 px-4 py-3 border-b border-neutral-100 dark:border-neutral-800">
+        <div className="shrink-0 px-4 py-3 border-b border-neutral-200 bg-surface">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
             Reading Progress
           </h2>
@@ -239,7 +239,7 @@ export default function BookSplitView({
                         className={`text-sm font-medium truncate ${
                           isMe
                             ? "text-blue-600 dark:text-blue-400"
-                            : "text-neutral-900 dark:text-neutral-100"
+                            : "text-black"
                         }`}
                       >
                         {entry.username}
@@ -314,7 +314,7 @@ export default function BookSplitView({
           <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700">
             <Link
               href={`/books/${bookId}/private-conversations`}
-              className="flex items-center justify-center gap-2 w-full rounded-lg border border-neutral-300 dark:border-neutral-700 px-3 py-2 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition"
+              className="flex items-center justify-center gap-2 w-full rounded-lg border border-neutral-300 dark:border-neutral-700 px-3 py-2 text-xs font-medium text-black hover:bg-neutral-100 dark:hover:bg-neutral-800 transition"
             >
               <svg
                 className="w-3.5 h-3.5 shrink-0"
@@ -406,7 +406,7 @@ export default function BookSplitView({
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="shrink-0 border-t border-neutral-200 bg-surface px-4 py-3">
+        <div className="shrink-0 border-t border-neutral-200 bg-background px-4 py-3">
           <form onSubmit={handleSendMessage} className="flex gap-2">
             <input
               type="text"

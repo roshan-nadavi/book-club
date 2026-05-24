@@ -3,15 +3,29 @@
 :root {
   --background: #f5f1e8;
   --surface: #efede6;
+  --header: #e8e6e1;
   --foreground: #171717;
+  --primary: #b7c9b2;
+  --primary-hover: #a5b8a0;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
+  --color-header: var(--header);
   --color-foreground: var(--foreground);
+  --color-primary: #b7c9b2;
+  --color-primary-hover: #a5b8a0;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+@utility bg-primary {
+  background-color: #b7c9b2;
+}
+
+@utility bg-primary-hover {
+  background-color: #a5b8a0;
 }
 
 body {

@@ -46,7 +46,7 @@ export default async function PrivateConversationsPage({
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      <header className="shrink-0 border-b border-neutral-200 bg-surface">
+      <header className="shrink-0 border-b border-neutral-300 bg-header">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3 min-w-0">
             <Link
@@ -63,7 +63,7 @@ export default async function PrivateConversationsPage({
               {book.title}
             </Link>
             <span className="text-neutral-300 dark:text-neutral-700">/</span>
-            <h1 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">
+            <h1 className="text-sm font-semibold text-black truncate">
               Private Conversations
             </h1>
           </div>

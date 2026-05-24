@@ -67,7 +67,7 @@ export default async function HomePage({
                   href={`/groups/${group.id}`}
                   className="flex items-center justify-between px-4 pt-3 pb-2"
                 >
-                  <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                  <p className="text-sm font-medium text-black">
                     {group.name}
                   </p>
                   <svg

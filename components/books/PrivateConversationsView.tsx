@@ -273,11 +273,11 @@ export default function PrivateConversationsView({
       >
         {/* ── LEFT PANEL — Room List ─────────────────────── */}
         <div
-          className="flex flex-col overflow-hidden border-r border-neutral-200 bg-surface"
+          className="flex flex-col overflow-hidden border-r border-neutral-200 bg-background"
           style={{ width: `${leftWidth}%` }}
         >
           {/* Header with create button */}
-          <div className="shrink-0 px-3 py-3 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between gap-2">
+          <div className="shrink-0 px-3 py-3 border-b border-neutral-200 bg-surface flex items-center justify-between gap-2">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               Private Groups
             </h2>
@@ -322,11 +322,7 @@ export default function PrivateConversationsView({
                       >
                         {/* Room title */}
                         <span
-                          className={`text-sm font-semibold leading-snug truncate block ${
-                            isSelected
-                              ? "text-blue-700 dark:text-blue-300"
-                              : "text-neutral-900 dark:text-neutral-100"
-                          }`}
+                          className="text-sm font-semibold leading-snug truncate block text-black"
                         >
                           {title}
                         </span>
@@ -368,7 +364,7 @@ export default function PrivateConversationsView({
           {selectedRoom ? (
             <>
               {/* Header */}
-              <div className="shrink-0 px-4 py-3 border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex items-center justify-between gap-3">
+              <div className="shrink-0 px-4 py-3 border-b border-neutral-200 bg-surface flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                     Discussion
@@ -439,7 +435,7 @@ export default function PrivateConversationsView({
               </div>
 
               {/* Message input */}
-              <div className="shrink-0 border-t border-neutral-200 bg-surface px-4 py-3">
+              <div className="shrink-0 border-t border-neutral-200 bg-background px-4 py-3">
                 <form onSubmit={handleSendMessage} className="flex gap-2">
                   <input
                     type="text"
