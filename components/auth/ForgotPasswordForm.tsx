@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { sendPasswordResetEmail } from "@/lib/services/auth";
+import { sendPasswordResetEmail } from "@/lib/services/auth.client";
 
 export default function ForgotPasswordForm() {
   const [email, setEmail] = useState("");

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { resetPassword } from "@/lib/services/auth";
+import { resetPassword } from "@/lib/services/auth.client";
 
 export default function ResetPasswordForm() {
   const router = useRouter();
@@ -33,7 +33,6 @@ export default function ResetPasswordForm() {
       return;
     }
 
-    // Redirect to home — session is already active after the token exchange
     router.push("/");
     router.refresh();
   }
