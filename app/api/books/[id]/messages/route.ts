@@ -60,7 +60,6 @@ export async function POST(
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
   const body = await request.json();
   const groupId = (body?.group_id as string | undefined)?.trim();
   const content = (body?.content as string | undefined)?.trim();
