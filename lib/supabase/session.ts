@@ -32,7 +32,17 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
-  const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/signup");
+
+  // Routes that are always accessible without authentication
+  const isAuthRoute =
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/signup") ||
+    pathname.startsWith("/forgot-password") ||
+    // /reset-password is reached via an email link; the token exchange happens
+    // in /auth/callback which sets the session cookie before redirecting here.
+    // We still allow unauthenticated access so the callback redirect works even
+    // if the cookie hasn't propagated yet.
+    pathname.startsWith("/reset-password");
 
   // Redirect unauthenticated users away from protected routes
   if (!user && !isAuthRoute) {
@@ -41,8 +51,12 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Redirect authenticated users away from auth pages
-  if (user && isAuthRoute) {
+  // Redirect authenticated users away from login/signup only
+  // (not forgot-password/reset-password — they may arrive there via email link)
+  const isLoginOrSignup =
+    pathname.startsWith("/login") || pathname.startsWith("/signup");
+
+  if (user && isLoginOrSignup) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);

@@ -2,30 +2,38 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
+import { resetPassword } from "@/lib/services/auth";
 
-export default function LoginForm() {
+export default function ResetPasswordForm() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    if (password !== confirm) {
+      setError("Passwords do not match.");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+
     setLoading(true);
+    const result = await resetPassword(password);
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-
-    if (error) {
-      setError(error.message);
+    if (!result.ok) {
+      setError(result.message);
       setLoading(false);
       return;
     }
 
+    // Redirect to home — session is already active after the token exchange
     router.push("/");
     router.refresh();
   }
@@ -34,57 +42,51 @@ export default function LoginForm() {
     <div className="w-full max-w-sm">
       <div className="mb-8 text-center">
         <h1 className="text-2xl font-semibold tracking-tight text-black">
-          Welcome back
+          Reset your password
         </h1>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Sign in to your book club
+          Choose a new password for your account
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label
-            htmlFor="email"
+            htmlFor="password"
             className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1"
           >
-            Email
+            New password
           </label>
           <input
-            id="email"
-            type="email"
-            autoComplete="email"
+            id="password"
+            type="password"
+            autoComplete="new-password"
             required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            minLength={6}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-neutral-100 transition"
-            placeholder="you@example.com"
+            placeholder="min. 6 characters"
           />
         </div>
 
         <div>
-          <div className="flex items-center justify-between mb-1">
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-neutral-700 dark:text-neutral-300"
-            >
-              Password
-            </label>
-            <Link
-              href="/forgot-password"
-              className="text-xs text-neutral-500 hover:text-black dark:text-neutral-400 dark:hover:text-neutral-100 underline underline-offset-4 transition"
-            >
-              Forgot password?
-            </Link>
-          </div>
+          <label
+            htmlFor="confirm"
+            className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1"
+          >
+            Confirm new password
+          </label>
           <input
-            id="password"
+            id="confirm"
             type="password"
-            autoComplete="current-password"
+            autoComplete="new-password"
             required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            minLength={6}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
             className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-neutral-100 transition"
-            placeholder="••••••••"
+            placeholder="repeat your new password"
           />
         </div>
 
@@ -99,19 +101,9 @@ export default function LoginForm() {
           disabled={loading}
           className="w-full rounded-lg bg-primary text-black text-sm font-medium py-2.5 hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition"
         >
-          {loading ? "Signing in…" : "Sign in"}
+          {loading ? "Saving…" : "Set new password"}
         </button>
       </form>
-
-      <p className="mt-6 text-center text-sm text-neutral-500 dark:text-neutral-400">
-        Don&apos;t have an account?{" "}
-        <Link
-          href="/signup"
-          className="font-medium text-black underline underline-offset-4 hover:text-neutral-600 transition"
-        >
-          Sign up
-        </Link>
-      </p>
     </div>
   );
 }

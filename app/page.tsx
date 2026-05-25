@@ -31,7 +31,15 @@ export default async function HomePage({
           <h1 className="text-lg font-semibold text-neutral-900">
             📚 Book Club
           </h1>
-          <LogoutButton />
+          <div className="flex items-center gap-2">
+            <Link
+              href="/change-password"
+              className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            >
+              Change password
+            </Link>
+            <LogoutButton />
+          </div>
         </div>
       </header>
 
