@@ -38,11 +38,12 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/login") ||
     pathname.startsWith("/signup") ||
     pathname.startsWith("/forgot-password") ||
-    // /reset-password is reached via an email link; the token exchange happens
-    // in /auth/callback which sets the session cookie before redirecting here.
-    // We still allow unauthenticated access so the callback redirect works even
-    // if the cookie hasn't propagated yet.
-    pathname.startsWith("/reset-password");
+    pathname.startsWith("/reset-password") ||
+    // /auth/callback must be reachable without a session — it IS the route
+    // that establishes the session by exchanging the code from the email link.
+    // Without this, the middleware redirects the email link to /login before
+    // the code exchange can happen.
+    pathname.startsWith("/auth/callback");
 
   // Redirect unauthenticated users away from protected routes
   if (!user && !isAuthRoute) {
