@@ -43,7 +43,7 @@ export async function updateSession(request: NextRequest) {
     // that establishes the session by exchanging the code from the email link.
     // Without this, the middleware redirects the email link to /login before
     // the code exchange can happen.
-    pathname.startsWith("/auth/callback");
+    pathname.startsWith("/callback");
 
   // Redirect unauthenticated users away from protected routes
   if (!user && !isAuthRoute) {
