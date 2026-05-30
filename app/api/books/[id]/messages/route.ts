@@ -44,7 +44,7 @@ export async function GET(
 /**
  * POST /api/books/[id]/messages
  * Posts a message on a specific book.
- * Body: { group_id: string, content: string }
+ * Body: { group_id: string, content: string, spoiler_chapter?: number | null }
  */
 export async function POST(
   request: Request,
@@ -60,6 +60,7 @@ export async function POST(
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
   const body = await request.json();
   const groupId = (body?.group_id as string | undefined)?.trim();
   const content = (body?.content as string | undefined)?.trim();
@@ -71,7 +72,16 @@ export async function POST(
     return NextResponse.json({ error: "content is required." }, { status: 400 });
   }
 
-  const result = await postMessage(supabase, user.id, groupId, content, bookId);
+  // Parse optional spoiler_chapter — must be a positive number if provided
+  let spoilerChapter: number | null = null;
+  if (body?.spoiler_chapter !== undefined && body?.spoiler_chapter !== null) {
+    const parsed = Number(body.spoiler_chapter);
+    if (!isNaN(parsed) && parsed > 0) {
+      spoilerChapter = parsed;
+    }
+  }
+
+  const result = await postMessage(supabase, user.id, groupId, content, bookId, spoilerChapter);
 
   if (!result.ok) {
     const status =

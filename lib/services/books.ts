@@ -8,6 +8,7 @@ export type BookSummary = {
   author: string | null;
   total_chapters: number | null;
   created_at: string;
+  spoiler_chapter: number | null
 };
 
 // ---------------------------------------------------------------------------
@@ -136,6 +137,7 @@ export type BookMessage = {
   content: string;
   created_at: string;
   sender_username: string;
+  spoiler_chapter: number | null
 };
 
 export type BookPageData = {
@@ -212,7 +214,7 @@ export async function getBookPageData(
       .order("current_chapter", { ascending: false }),
     client
       .from("discussions")
-      .select("id, group_id, book_id, sender_id, content, created_at")
+      .select("id, group_id, book_id, sender_id, content, created_at, spoiler_chapter")
       .eq("book_id", bookId)
       .eq("group_id", book.group_id)
       .order("created_at", { ascending: true }),
@@ -265,6 +267,7 @@ export async function getBookPageData(
     sender_username: m.sender_id
       ? (usernameMap[m.sender_id] ?? m.sender_id)
       : "Unknown",
+    spoiler_chapter: m.spoiler_chapter ?? null,
   }));
 
   const myProgressEntry = progress.find((p) => p.user_id === userId);

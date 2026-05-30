@@ -18,6 +18,7 @@ type Message = {
   content: string;
   created_at: string;
   sender_username?: string;
+  spoiler_chapter: number | null;
 };
 
 interface Props {
@@ -31,6 +32,94 @@ interface Props {
   initialMessages: Message[];
 }
 
+// ---------------------------------------------------------------------------
+// SpoilerMessage — renders a single message, locked or visible
+// ---------------------------------------------------------------------------
+
+function SpoilerMessage({
+  msg,
+  isOwn,
+  myCurrentChapter,
+  senderLabel,
+  formattedTime,
+}: {
+  msg: Message;
+  isOwn: boolean;
+  myCurrentChapter: number | null;
+  senderLabel: string;
+  formattedTime: string;
+}) {
+  const isLocked =
+    msg.spoiler_chapter !== null &&
+    (myCurrentChapter === null || myCurrentChapter < msg.spoiler_chapter);
+
+  return (
+    <div className={`flex flex-col gap-1 ${isOwn ? "items-end" : "items-start"}`}>
+      {/* Sender + time row */}
+      <div className={`flex items-center gap-2 ${isOwn ? "flex-row-reverse" : "flex-row"}`}>
+        <span className="text-[11px] text-neutral-400 dark:text-neutral-500 font-medium truncate max-w-[180px]">
+          {senderLabel}
+        </span>
+        <span className="text-[11px] text-neutral-400 dark:text-neutral-500">
+          {formattedTime}
+        </span>
+        {msg.spoiler_chapter !== null && (
+          <span
+            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+              isLocked
+                ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+                : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+            }`}
+          >
+            Ch.{msg.spoiler_chapter}+
+          </span>
+        )}
+      </div>
+
+      {/* Bubble */}
+      {isLocked ? (
+        <div
+          className={`max-w-[75%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed flex items-center gap-2 select-none ${
+            isOwn ? "rounded-tr-sm" : "rounded-tl-sm"
+          } bg-neutral-100 dark:bg-neutral-800 border border-dashed border-neutral-300 dark:border-neutral-600`}
+        >
+          {/* Lock icon */}
+          <svg
+            className="w-3.5 h-3.5 shrink-0 text-amber-500"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2.5}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
+            />
+          </svg>
+          <span className="text-neutral-400 dark:text-neutral-500 italic text-xs">
+            Locked until chapter {msg.spoiler_chapter}
+          </span>
+        </div>
+      ) : (
+        <div
+          className={`max-w-[75%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+            isOwn
+              ? "bg-neutral-900 text-neutral-100 dark:bg-neutral-100 dark:text-neutral-900 rounded-tr-sm"
+              : "bg-white text-neutral-900 border border-neutral-200 dark:bg-neutral-800 dark:text-neutral-100 dark:border-neutral-700 rounded-tl-sm"
+          }`}
+        >
+          {msg.content}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
 export default function BookSplitView({
   bookId,
   groupId,
@@ -38,7 +127,7 @@ export default function BookSplitView({
   currentUserId,
   currentUserUsername,
   initialProgress,
-  myCurrentChapter,
+  myCurrentChapter: initialMyCurrentChapter,
   initialMessages,
 }: Props) {
   const [leftWidth, setLeftWidth] = useState(35);
@@ -47,8 +136,11 @@ export default function BookSplitView({
 
   // Progress state
   const [progress, setProgress] = useState<ProgressEntry[]>(initialProgress);
+  const [myCurrentChapter, setMyCurrentChapter] = useState<number | null>(
+    initialMyCurrentChapter
+  );
   const [chapterInput, setChapterInput] = useState(
-    myCurrentChapter != null ? String(myCurrentChapter) : ""
+    initialMyCurrentChapter != null ? String(initialMyCurrentChapter) : ""
   );
   const [savingProgress, setSavingProgress] = useState(false);
   const [progressError, setProgressError] = useState<string | null>(null);
@@ -59,6 +151,10 @@ export default function BookSplitView({
   const [messageContent, setMessageContent] = useState("");
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Spoiler compose state
+  const [spoilerEnabled, setSpoilerEnabled] = useState(false);
+  const [spoilerChapter, setSpoilerChapter] = useState<string>("");
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -76,7 +172,9 @@ export default function BookSplitView({
       const pct = ((e.clientX - rect.left) / rect.width) * 100;
       setLeftWidth(Math.min(Math.max(pct, 20), 70));
     }
-    function onMouseUp() { setIsDragging(false); }
+    function onMouseUp() {
+      setIsDragging(false);
+    }
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
     return () => {
@@ -95,7 +193,9 @@ export default function BookSplitView({
       const pct = ((e.touches[0].clientX - rect.left) / rect.width) * 100;
       setLeftWidth(Math.min(Math.max(pct, 20), 70));
     }
-    function onTouchEnd() { setIsDragging(false); }
+    function onTouchEnd() {
+      setIsDragging(false);
+    }
     window.addEventListener("touchmove", onTouchMove);
     window.addEventListener("touchend", onTouchEnd);
     return () => {
@@ -133,18 +233,26 @@ export default function BookSplitView({
       return;
     }
 
+    setMyCurrentChapter(chapter);
     setProgress((prev) => {
       const exists = prev.find((p) => p.user_id === currentUserId);
       const updated = new Date().toISOString();
       if (exists) {
-        return [...prev.map((p) =>
-          p.user_id === currentUserId
-            ? { ...p, current_chapter: chapter, updated_at: updated }
-            : p
-        )].sort((a, b) => b.current_chapter - a.current_chapter);
+        return [
+          ...prev.map((p) =>
+            p.user_id === currentUserId
+              ? { ...p, current_chapter: chapter, updated_at: updated }
+              : p
+          ),
+        ].sort((a, b) => b.current_chapter - a.current_chapter);
       }
       return [
-        { user_id: currentUserId, username: currentUserUsername, current_chapter: chapter, updated_at: updated },
+        {
+          user_id: currentUserId,
+          username: currentUserUsername,
+          current_chapter: chapter,
+          updated_at: updated,
+        },
         ...prev,
       ].sort((a, b) => b.current_chapter - a.current_chapter);
     });
@@ -154,7 +262,7 @@ export default function BookSplitView({
     setTimeout(() => setProgressSuccess(false), 2000);
   }
 
-  // ── Messages ──────────────────────────────────────────────
+  // ── Send message ──────────────────────────────────────────
 
   async function handleSendMessage(e: React.FormEvent) {
     e.preventDefault();
@@ -162,10 +270,20 @@ export default function BookSplitView({
     if (!content) return;
     setSending(true);
 
+    // Determine spoiler_chapter to send
+    const spoilerChapterValue =
+      spoilerEnabled && spoilerChapter !== ""
+        ? Number(spoilerChapter)
+        : null;
+
     const res = await fetch(`/api/books/${bookId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ group_id: groupId, content }),
+      body: JSON.stringify({
+        group_id: groupId,
+        content,
+        spoiler_chapter: spoilerChapterValue,
+      }),
     });
 
     if (res.ok) {
@@ -180,13 +298,19 @@ export default function BookSplitView({
           content,
           created_at: new Date().toISOString(),
           sender_username: currentUserUsername,
+          spoiler_chapter: spoilerChapterValue,
         },
       ]);
       setMessageContent("");
+      // Reset spoiler state after sending
+      setSpoilerEnabled(false);
+      setSpoilerChapter("");
     }
 
     setSending(false);
   }
+
+  // ── Helpers ───────────────────────────────────────────────
 
   function formatTime(iso: string) {
     return new Date(iso).toLocaleString(undefined, {
@@ -202,6 +326,11 @@ export default function BookSplitView({
     return Math.min(100, Math.round((chapter / totalChapters) * 100));
   }
 
+  // Build chapter options for the spoiler dropdown.
+  // Offer every integer chapter up to totalChapters, or up to 100 if unknown.
+  const maxChapter = totalChapters ?? 100;
+  const chapterOptions = Array.from({ length: maxChapter }, (_, i) => i + 1);
+
   // ── Render ────────────────────────────────────────────────
 
   return (
@@ -210,7 +339,7 @@ export default function BookSplitView({
       className="flex flex-1 overflow-hidden"
       style={{ userSelect: isDragging ? "none" : undefined }}
     >
-      {/* LEFT PANEL — Reading Progress */}
+      {/* ── LEFT PANEL — Reading Progress ────────────────── */}
       <div
         className="flex flex-col overflow-hidden border-r border-neutral-200 bg-background"
         style={{ width: `${leftWidth}%` }}
@@ -258,7 +387,9 @@ export default function BookSplitView({
                       <div className="w-full h-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full transition-all duration-300 ${
-                            isMe ? "bg-blue-500" : "bg-neutral-400 dark:bg-neutral-500"
+                            isMe
+                              ? "bg-blue-500"
+                              : "bg-neutral-400 dark:bg-neutral-500"
                           }`}
                           style={{ width: `${pct}%` }}
                         />
@@ -271,14 +402,16 @@ export default function BookSplitView({
           )}
         </div>
 
-        {/* My progress updater + Private Conversations link — pinned to bottom */}
+        {/* My progress updater + Private Conversations link */}
         <div className="shrink-0 border-t border-neutral-200 dark:border-neutral-800 px-4 py-3 bg-background">
           <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">
             Update Your Progress
           </p>
           <form onSubmit={handleUpdateProgress} className="flex gap-2 items-center">
             <div className="flex items-center gap-1.5 flex-1 min-w-0">
-              <span className="text-xs text-neutral-500 dark:text-neutral-400 shrink-0">Ch.</span>
+              <span className="text-xs text-neutral-500 dark:text-neutral-400 shrink-0">
+                Ch.
+              </span>
               <input
                 type="number"
                 min={0}
@@ -304,13 +437,17 @@ export default function BookSplitView({
             </button>
           </form>
           {progressError && (
-            <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">{progressError}</p>
+            <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">
+              {progressError}
+            </p>
           )}
           {progressSuccess && (
-            <p className="mt-1.5 text-xs text-green-600 dark:text-green-400">✓ Progress saved!</p>
+            <p className="mt-1.5 text-xs text-green-600 dark:text-green-400">
+              ✓ Progress saved!
+            </p>
           )}
 
-          {/* Private Conversations button */}
+          {/* Private Conversations link */}
           <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700">
             <Link
               href={`/books/${bookId}/private-conversations`}
@@ -335,7 +472,7 @@ export default function BookSplitView({
         </div>
       </div>
 
-      {/* DIVIDER */}
+      {/* ── DIVIDER ───────────────────────────────────────── */}
       <div
         className={`relative shrink-0 w-1.5 cursor-col-resize flex items-center justify-center group ${
           isDragging
@@ -355,7 +492,7 @@ export default function BookSplitView({
         </div>
       </div>
 
-      {/* RIGHT PANEL — Book Discussion */}
+      {/* ── RIGHT PANEL — Book Discussion ────────────────── */}
       <div className="flex flex-col flex-1 overflow-hidden bg-background">
         <div className="shrink-0 px-4 py-3 border-b border-neutral-200 bg-surface">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
@@ -363,6 +500,7 @@ export default function BookSplitView({
           </h2>
         </div>
 
+        {/* Message list */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
           {messages.length === 0 && (
             <p className="text-sm text-neutral-400 dark:text-neutral-500 text-center py-8">
@@ -375,54 +513,135 @@ export default function BookSplitView({
               ? currentUserUsername
               : (msg.sender_username ?? "Unknown");
             return (
-              <div
+              <SpoilerMessage
                 key={msg.id}
-                className={`flex flex-col gap-1 ${isOwn ? "items-end" : "items-start"}`}
-              >
-                <div
-                  className={`flex items-center gap-2 ${
-                    isOwn ? "flex-row-reverse" : "flex-row"
-                  }`}
-                >
-                  <span className="text-[11px] text-neutral-400 dark:text-neutral-500 font-medium truncate max-w-[180px]">
-                    {senderLabel}
-                  </span>
-                  <span className="text-[11px] text-neutral-400 dark:text-neutral-500">
-                    {formatTime(msg.created_at)}
-                  </span>
-                </div>
-                <div
-                  className={`max-w-[75%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
-                    isOwn
-                      ? "bg-neutral-900 text-neutral-100 dark:bg-neutral-100 dark:text-neutral-900 rounded-tr-sm"
-                      : "bg-white text-neutral-900 border border-neutral-200 dark:bg-neutral-800 dark:text-neutral-100 dark:border-neutral-700 rounded-tl-sm"
-                  }`}
-                >
-                  {msg.content}
-                </div>
-              </div>
+                msg={msg}
+                isOwn={isOwn}
+                myCurrentChapter={myCurrentChapter}
+                senderLabel={senderLabel}
+                formattedTime={formatTime(msg.created_at)}
+              />
             );
           })}
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="shrink-0 border-t border-neutral-200 bg-background px-4 py-3">
+        {/* ── Compose area ─────────────────────────────── */}
+        <div className="shrink-0 border-t border-neutral-200 bg-background px-4 py-3 space-y-2">
+
+          {/* Spoiler toggle row — shown above the input */}
+          <div className="flex items-center gap-2">
+            {/* Toggle button */}
+            <button
+              type="button"
+              onClick={() => {
+                const next = !spoilerEnabled;
+                setSpoilerEnabled(next);
+                if (!next) setSpoilerChapter("");
+              }}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium border transition ${
+                spoilerEnabled
+                  ? "bg-amber-100 border-amber-300 text-amber-800 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-300"
+                  : "bg-white border-neutral-300 text-neutral-500 hover:border-neutral-400 hover:text-neutral-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-500"
+              }`}
+            >
+              {/* Lock icon */}
+              <svg
+                className="w-3 h-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                {spoilerEnabled ? (
+                  // Locked
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
+                  />
+                ) : (
+                  // Unlocked
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
+                  />
+                )}
+              </svg>
+              Spoiler
+            </button>
+
+            {/* Chapter dropdown — only visible when spoiler is enabled */}
+            {spoilerEnabled && (
+              <>
+                <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                  lock until ch.
+                </span>
+                <select
+                  value={spoilerChapter}
+                  onChange={(e) => setSpoilerChapter(e.target.value)}
+                  className="rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-neutral-800 px-2 py-1 text-xs text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                >
+                  <option value="">pick chapter…</option>
+                  {chapterOptions.map((ch) => (
+                    <option key={ch} value={ch}>
+                      {ch}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Preview badge */}
+                {spoilerChapter !== "" && (
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400">
+                    Ch.{spoilerChapter}+
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Message input + send button */}
           <form onSubmit={handleSendMessage} className="flex gap-2">
             <input
               type="text"
               value={messageContent}
               onChange={(e) => setMessageContent(e.target.value)}
-              placeholder="Write a message…"
-              className="flex-1 rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100 dark:focus:ring-neutral-100"
+              placeholder={
+                spoilerEnabled && spoilerChapter !== ""
+                  ? `Spoiler message (ch. ${spoilerChapter}+)…`
+                  : "Write a message…"
+              }
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 transition dark:text-neutral-100 ${
+                spoilerEnabled && spoilerChapter !== ""
+                  ? "border-amber-300 bg-amber-50 focus:ring-amber-400 dark:border-amber-700 dark:bg-amber-950/30"
+                  : "border-neutral-300 bg-neutral-50 focus:ring-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:focus:ring-neutral-100"
+              }`}
             />
             <button
               type="submit"
-              disabled={sending || !messageContent.trim()}
+              disabled={
+                sending ||
+                !messageContent.trim() ||
+                (spoilerEnabled && spoilerChapter === "")
+              }
+              title={
+                spoilerEnabled && spoilerChapter === ""
+                  ? "Pick a chapter for the spoiler gate first"
+                  : undefined
+              }
               className="shrink-0 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-neutral-100 transition hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
             >
               Send
             </button>
           </form>
+
+          {/* Helper text when spoiler is on but no chapter selected */}
+          {spoilerEnabled && spoilerChapter === "" && (
+            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+              Select a chapter above to enable the spoiler gate.
+            </p>
+          )}
         </div>
       </div>
     </div>
