@@ -40,6 +40,7 @@ export default async function PrivateConversationsPage({
     book,
     groupName,
     currentUserUsername,
+    myCurrentChapter,
     allGroupMembers,
     privateRooms,
   } = result.data;
@@ -76,6 +77,8 @@ export default async function PrivateConversationsPage({
         groupId={book.group_id}
         currentUserId={user.id}
         currentUserUsername={currentUserUsername}
+        myCurrentChapter={myCurrentChapter}
+        totalChapters={book.total_chapters}
         initialRooms={privateRooms}
         allGroupMembers={allGroupMembers}
       />

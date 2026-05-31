@@ -38,7 +38,7 @@ export async function GET(
 /**
  * POST /api/private-rooms/[id]/messages
  * Post a message to a private chat room.
- * Body: { content: string }
+ * Body: { content: string, spoiler_chapter?: number | null }
  * The requesting user must be a member of the room.
  */
 export async function POST(
@@ -56,7 +56,7 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { content?: string };
+  let body: { content?: string; spoiler_chapter?: number | null };
   try {
     body = await request.json();
   } catch {
@@ -71,7 +71,22 @@ export async function POST(
     );
   }
 
-  const result = await postPrivateMessage(supabase, user.id, roomId, content);
+  // Parse optional spoiler_chapter — must be a positive number if provided
+  let spoilerChapter: number | null = null;
+  if (body?.spoiler_chapter !== undefined && body?.spoiler_chapter !== null) {
+    const parsed = Number(body.spoiler_chapter);
+    if (!isNaN(parsed) && parsed > 0) {
+      spoilerChapter = parsed;
+    }
+  }
+
+  const result = await postPrivateMessage(
+    supabase,
+    user.id,
+    roomId,
+    content,
+    spoilerChapter,
+  );
 
   if (!result.ok) {
     const status =

@@ -25,6 +25,7 @@ export type PrivateMessage = {
   sender_username: string | null;
   content: string;
   created_at: string;
+  spoiler_chapter: number | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -44,18 +45,6 @@ export type CreatePrivateRoomResult =
       message: string;
     };
 
-/**
- * Create a private chat room for a subset of group members for a specific book.
- *
- * Validates:
- *  1. The requesting user is a member of the group.
- *  2. All supplied user IDs are members of the group.
- *  3. No existing private_chat_room for this book has the exact same member set.
- *
- * Writes:
- *  1. Insert into private_chat_rooms.
- *  2. Bulk insert into private_chat_members.
- */
 export async function createPrivateChatRoom(
   client: SupabaseClient<Database>,
   requestingUserId: string,
@@ -64,7 +53,6 @@ export async function createPrivateChatRoom(
   memberUserIds: string[],
   groupName?: string | null
 ): Promise<CreatePrivateRoomResult> {
-  // Deduplicate and ensure the requesting user is included
   const uniqueIds = [...new Set([requestingUserId, ...memberUserIds])];
 
   if (uniqueIds.length < 2) {
@@ -75,7 +63,6 @@ export async function createPrivateChatRoom(
     };
   }
 
-  // 1. Fetch all members of the group
   const { data: groupMembers, error: membershipError } = await client
     .from("memberships")
     .select("user_id")
@@ -87,7 +74,6 @@ export async function createPrivateChatRoom(
 
   const groupMemberIds = new Set((groupMembers ?? []).map((m) => m.user_id));
 
-  // Verify requesting user is a group member
   if (!groupMemberIds.has(requestingUserId)) {
     return {
       ok: false,
@@ -96,7 +82,6 @@ export async function createPrivateChatRoom(
     };
   }
 
-  // Verify all supplied IDs are group members
   const nonMembers = uniqueIds.filter((id) => !groupMemberIds.has(id));
   if (nonMembers.length > 0) {
     return {
@@ -106,7 +91,6 @@ export async function createPrivateChatRoom(
     };
   }
 
-  // 2. Check for duplicate room: fetch all rooms for this book with their members
   const { data: existingRooms, error: roomsError } = await client
     .from("private_chat_rooms")
     .select("id, private_chat_members(user_id)")
@@ -136,7 +120,6 @@ export async function createPrivateChatRoom(
     }
   }
 
-  // 3. Insert the room
   const { data: room, error: insertRoomError } = await client
     .from("private_chat_rooms")
     .insert({ book_id: bookId, group_name: groupName ?? null })
@@ -151,7 +134,6 @@ export async function createPrivateChatRoom(
     };
   }
 
-  // 4. Insert members
   const memberRows = uniqueIds.map((uid) => ({
     room_id: room.id,
     user_id: uid,
@@ -176,17 +158,12 @@ export type ListPrivateRoomsResult =
   | { ok: true; rooms: PrivateChatRoom[] }
   | { ok: false; kind: "not_member" | "error"; message: string };
 
-/**
- * Return all private chat rooms for a given book that the requesting user belongs to,
- * including each room's members with usernames.
- */
 export async function listPrivateRoomsForBook(
   client: SupabaseClient<Database>,
   requestingUserId: string,
   bookId: string,
   groupId: string
 ): Promise<ListPrivateRoomsResult> {
-  // Confirm group membership
   const { data: membership, error: membershipError } = await client
     .from("memberships")
     .select("group_id")
@@ -205,7 +182,6 @@ export async function listPrivateRoomsForBook(
     };
   }
 
-  // Get the rooms this user belongs to for this book
   const { data: myRoomRows, error: myRoomsError } = await client
     .from("private_chat_members")
     .select("room_id")
@@ -221,7 +197,6 @@ export async function listPrivateRoomsForBook(
     return { ok: true, rooms: [] };
   }
 
-  // Fetch the rooms with all their members
   const { data: rooms, error: roomsError } = await client
     .from("private_chat_rooms")
     .select("id, book_id, group_name, created_at, private_chat_members(user_id)")
@@ -233,7 +208,6 @@ export async function listPrivateRoomsForBook(
     return { ok: false, kind: "error", message: roomsError.message };
   }
 
-  // Batch-fetch usernames for all members
   const allUserIds = [
     ...new Set(
       (rooms ?? []).flatMap((r) =>
@@ -275,16 +249,11 @@ export type GetPrivateMessagesResult =
   | { ok: true; messages: PrivateMessage[] }
   | { ok: false; kind: "not_member" | "error"; message: string };
 
-/**
- * Return all messages for a private chat room, oldest first.
- * Validates that the requesting user is a member of the room.
- */
 export async function getPrivateMessages(
   client: SupabaseClient<Database>,
   requestingUserId: string,
   roomId: string
 ): Promise<GetPrivateMessagesResult> {
-  // Verify room membership
   const { data: membership, error: membershipError } = await client
     .from("private_chat_members")
     .select("room_id")
@@ -305,7 +274,7 @@ export async function getPrivateMessages(
 
   const { data, error } = await client
     .from("private_messages")
-    .select("id, room_id, sender_id, content, created_at")
+    .select("id, room_id, sender_id, content, created_at, spoiler_chapter")
     .eq("room_id", roomId)
     .order("created_at", { ascending: true });
 
@@ -313,7 +282,6 @@ export async function getPrivateMessages(
     return { ok: false, kind: "error", message: error.message };
   }
 
-  // Batch-fetch sender usernames
   const senderIds = [
     ...new Set(
       (data ?? []).map((m) => m.sender_id).filter(Boolean) as string[]
@@ -338,6 +306,7 @@ export async function getPrivateMessages(
     sender_username: m.sender_id ? (usernameMap[m.sender_id] ?? null) : null,
     content: m.content,
     created_at: m.created_at,
+    spoiler_chapter: m.spoiler_chapter ?? null,
   }));
 
   return { ok: true, messages };
@@ -355,15 +324,12 @@ export type PostPrivateMessageResult =
       message: string;
     };
 
-/**
- * Post a message to a private chat room.
- * Validates that the requesting user is a member of the room.
- */
 export async function postPrivateMessage(
   client: SupabaseClient<Database>,
   requestingUserId: string,
   roomId: string,
-  content: string
+  content: string,
+  spoilerChapter?: number | null,
 ): Promise<PostPrivateMessageResult> {
   const trimmed = content.trim();
   if (!trimmed) {
@@ -374,7 +340,6 @@ export async function postPrivateMessage(
     };
   }
 
-  // Verify room membership
   const { data: membership, error: membershipError } = await client
     .from("private_chat_members")
     .select("room_id")
@@ -395,7 +360,12 @@ export async function postPrivateMessage(
 
   const { data, error } = await client
     .from("private_messages")
-    .insert({ room_id: roomId, sender_id: requestingUserId, content: trimmed })
+    .insert({
+      room_id: roomId,
+      sender_id: requestingUserId,
+      content: trimmed,
+      spoiler_chapter: spoilerChapter ?? null,
+    })
     .select("id")
     .single();
 
@@ -430,6 +400,7 @@ export type PrivateConversationsPageData = {
   };
   groupName: string;
   currentUserUsername: string;
+  myCurrentChapter: number | null;
   allGroupMembers: GroupMemberSummary[];
   privateRooms: PrivateChatRoom[];
 };
@@ -438,22 +409,6 @@ export type GetPrivateConversationsPageDataResult =
   | { ok: true; data: PrivateConversationsPageData }
   | { ok: false; kind: "not_found" | "not_member" | "error"; message: string };
 
-/**
- * Fetch all data required by the private conversations page:
- *   - The book
- *   - Membership verification
- *   - Group name
- *   - All group members with usernames (for the "create group" form)
- *   - All private chat rooms the user belongs to for this book, with members
- *   - The current user's username
- *
- * Queries:
- *   1. Book row.
- *   2. Membership check.
- *   3. Group info + all membership rows + current user profile + user's room IDs (parallel).
- *   4. Batch-fetch all member profiles (for the create-room form).
- *   5. If the user has rooms: fetch room rows with members, then batch-fetch usernames.
- */
 export async function getPrivateConversationsPageData(
   client: SupabaseClient<Database>,
   userId: string,
@@ -485,17 +440,25 @@ export async function getPrivateConversationsPageData(
     return { ok: false, kind: "not_member", message: "You are not a member of this group." };
   }
 
-  // 3. Parallel: group info, all membership rows, current user profile, user's room IDs
+  // 3. Parallel: group info, all membership rows, current user profile,
+  //    user's room IDs, and current user's reading progress for this book
   const [
     { data: group, error: groupError },
     { data: membershipRows, error: membershipsError },
     { data: currentProfile, error: profileError },
     { data: privateRoomRows, error: privateRoomRowsError },
+    { data: myProgressRow, error: progressError },
   ] = await Promise.all([
     client.from("groups").select("id, name").eq("id", book.group_id).single(),
     client.from("memberships").select("user_id").eq("group_id", book.group_id),
     client.from("profiles").select("username").eq("id", userId).single(),
     client.from("private_chat_members").select("room_id").eq("user_id", userId),
+    client
+      .from("user_book_progress")
+      .select("current_chapter")
+      .eq("user_id", userId)
+      .eq("book_id", bookId)
+      .maybeSingle(),
   ]);
 
   if (groupError) {
@@ -509,6 +472,9 @@ export async function getPrivateConversationsPageData(
   }
   if (privateRoomRowsError) {
     return { ok: false, kind: "error", message: privateRoomRowsError.message };
+  }
+  if (progressError) {
+    return { ok: false, kind: "error", message: progressError.message };
   }
 
   // 4. Batch-fetch all group member profiles (needed for the create-room form)
@@ -545,7 +511,6 @@ export async function getPrivateConversationsPageData(
     }
 
     if (rooms && rooms.length > 0) {
-      // Batch-fetch usernames for all room members
       const allMemberIds = [
         ...new Set(
           rooms.flatMap((r) =>
@@ -585,6 +550,7 @@ export async function getPrivateConversationsPageData(
       book,
       groupName: group?.name ?? "Group",
       currentUserUsername: currentProfile?.username ?? userId,
+      myCurrentChapter: myProgressRow?.current_chapter ?? null,
       allGroupMembers,
       privateRooms,
     },
