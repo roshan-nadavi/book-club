@@ -401,7 +401,7 @@ export default function GroupSplitView({
                         type="button"
                         onClick={(e) => requestDeleteBook(e, book)}
                         aria-label={`Remove ${book.title}`}
-                        className="absolute top-2.5 right-2.5 w-5 h-5 flex items-center justify-center rounded-full bg-red-100 dark:bg-red-950 text-red-500 dark:text-red-400 opacity-0 group-hover:opacity-100 hover:bg-red-200 dark:hover:bg-red-900 focus:opacity-100 transition-opacity"
+                        className="absolute top-2.5 right-2.5 w-5 h-5 flex items-center justify-center rounded-full bg-red-100 dark:bg-red-950 text-red-500 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900 transition-colors"
                       >
                         <svg
                           className="w-2.5 h-2.5"
