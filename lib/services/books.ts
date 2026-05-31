@@ -285,3 +285,71 @@ export async function getBookPageData(
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Delete a book from a group (admin only)
+// ---------------------------------------------------------------------------
+
+export type DeleteBookResult =
+  | { ok: true }
+  | { ok: false; kind: "not_member" | "not_admin" | "not_found" | "error"; message: string };
+
+/**
+ * Delete a book from a group. Only the group admin may do this.
+ *
+ * Queries:
+ *   1. Fetch the book to confirm it exists and get its group_id.
+ *   2. Fetch the group to confirm the requesting user is the admin.
+ *   3. Delete the book (cascades to books, discussions, user_book_progress via FK).
+ */
+export async function deleteBookFromGroup(
+  client: SupabaseClient<Database>,
+  userId: string,
+  groupId: string,
+  bookId: string
+): Promise<DeleteBookResult> {
+  // 1. Confirm the book exists and belongs to this group
+  const { data: book, error: bookError } = await client
+    .from("books")
+    .select("id, group_id")
+    .eq("id", bookId)
+    .eq("group_id", groupId)
+    .maybeSingle();
+
+  if (bookError) {
+    return { ok: false, kind: "error", message: bookError.message };
+  }
+  if (!book) {
+    return { ok: false, kind: "not_found", message: "Book not found in this group." };
+  }
+
+  // 2. Confirm the requesting user is the group admin
+  const { data: group, error: groupError } = await client
+    .from("groups")
+    .select("admin_id")
+    .eq("id", groupId)
+    .maybeSingle();
+
+  if (groupError) {
+    return { ok: false, kind: "error", message: groupError.message };
+  }
+  if (!group) {
+    return { ok: false, kind: "not_found", message: "Group not found." };
+  }
+  if (group.admin_id !== userId) {
+    return { ok: false, kind: "not_admin", message: "Only the group admin can remove books." };
+  }
+
+  // 3. Delete the book
+  const { error: deleteError } = await client
+    .from("books")
+    .delete()
+    .eq("id", bookId)
+    .eq("group_id", groupId);
+
+  if (deleteError) {
+    return { ok: false, kind: "error", message: deleteError.message };
+  }
+
+  return { ok: true };
+}

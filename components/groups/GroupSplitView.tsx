@@ -60,6 +60,11 @@ export default function GroupSplitView({
   const [addingBook, setAddingBook] = useState(false);
   const [addBookError, setAddBookError] = useState<string | null>(null);
 
+  // Delete book state
+  const [confirmDeleteBook, setConfirmDeleteBook] = useState<Book | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   // Messages state
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [messageContent, setMessageContent] = useState("");
@@ -133,7 +138,7 @@ export default function GroupSplitView({
   // ── Lazy member fetch ─────────────────────────────────────
 
   async function loadMembers() {
-    if (membersLoaded) return; // already fetched — reuse cached list
+    if (membersLoaded) return;
     setMembersLoading(true);
     setMembersError(null);
 
@@ -195,6 +200,44 @@ export default function GroupSplitView({
     ]);
     setAddingBook(false);
     setShowAddBook(false);
+  }
+
+  // ── Delete Book ───────────────────────────────────────────
+
+  function requestDeleteBook(e: React.MouseEvent, book: Book) {
+    // Prevent the Link from navigating when the button is clicked
+    e.preventDefault();
+    e.stopPropagation();
+    setDeleteError(null);
+    setConfirmDeleteBook(book);
+  }
+
+  async function confirmDelete() {
+    if (!confirmDeleteBook) return;
+    setDeleting(true);
+    setDeleteError(null);
+
+    const res = await fetch(
+      `/api/groups/${groupId}/books/${confirmDeleteBook.id}`,
+      { method: "DELETE" }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      setDeleteError(data.error ?? "Failed to remove book.");
+      setDeleting(false);
+      return;
+    }
+
+    setBooks((prev) => prev.filter((b) => b.id !== confirmDeleteBook.id));
+    setDeleting(false);
+    setConfirmDeleteBook(null);
+  }
+
+  function cancelDelete() {
+    setConfirmDeleteBook(null);
+    setDeleteError(null);
   }
 
   // ── Messages ──────────────────────────────────────────────
@@ -272,12 +315,10 @@ export default function GroupSplitView({
       return;
     }
 
-    // Remove the member from the cached list so both modals stay in sync
     setMembers((prev) =>
       prev.filter((m) => m.user_id !== confirmKickTarget.user_id)
     );
 
-    // Update the displayed invite code with the newly generated one
     if (data.newInviteCode) {
       setInviteCode(data.newInviteCode);
     }
@@ -300,6 +341,9 @@ export default function GroupSplitView({
       minute: "2-digit",
     });
   }
+
+  // Suppress unused variable warning — inviteCode is updated after kick
+  void inviteCode;
 
   // ── Render ────────────────────────────────────────────────
 
@@ -329,12 +373,14 @@ export default function GroupSplitView({
             ) : (
               <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
                 {books.map((book) => (
-                  <li key={book.id}>
+                  <li key={book.id} className="relative group">
                     <Link
                       href={`/books/${book.id}`}
-                      className="flex flex-col gap-0.5 px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition group"
+                      className="flex flex-col gap-0.5 px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition"
                     >
-                      <span className="text-sm font-medium text-black group-hover:text-neutral-700 leading-snug">
+                      {/* Title row — add right padding when admin so the
+                          delete button never overlaps the text */}
+                      <span className={`text-sm font-medium text-black group-hover:text-neutral-700 leading-snug ${isAdmin ? "pr-7" : ""}`}>
                         {book.title}
                       </span>
                       {book.author && (
@@ -348,6 +394,26 @@ export default function GroupSplitView({
                         </span>
                       )}
                     </Link>
+
+                    {/* Admin-only delete button — top-right of the list item */}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={(e) => requestDeleteBook(e, book)}
+                        aria-label={`Remove ${book.title}`}
+                        className="absolute top-2.5 right-2.5 w-5 h-5 flex items-center justify-center rounded-full bg-red-100 dark:bg-red-950 text-red-500 dark:text-red-400 opacity-0 group-hover:opacity-100 hover:bg-red-200 dark:hover:bg-red-900 focus:opacity-100 transition-opacity"
+                      >
+                        <svg
+                          className="w-2.5 h-2.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={3}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
+                        </svg>
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -393,7 +459,6 @@ export default function GroupSplitView({
               Group Discussion
             </h2>
             <div className="flex items-center gap-2">
-              {/* List All Members — visible to everyone */}
               <button
                 onClick={openMembersModal}
                 className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition"
@@ -401,7 +466,6 @@ export default function GroupSplitView({
                 List All Members
               </button>
 
-              {/* Kick Members — visible only to admin */}
               {isAdmin && (
                 <button
                   onClick={openKickModal}
@@ -565,6 +629,39 @@ export default function GroupSplitView({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── CONFIRM DELETE BOOK MODAL ────────────────────────── */}
+      {confirmDeleteBook && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 dark:bg-black/70 px-4">
+          <div className="bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-700 w-full max-w-xs p-6 flex flex-col gap-4">
+            <p className="text-sm text-neutral-800 dark:text-neutral-200 text-center leading-relaxed">
+              Are you sure you want to remove{" "}
+              <span className="font-semibold">{confirmDeleteBook.title}</span>?
+            </p>
+            {deleteError && (
+              <p className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded px-2 py-1.5 text-center">
+                {deleteError}
+              </p>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={cancelDelete}
+                disabled={deleting}
+                className="flex-1 rounded-lg border border-neutral-300 dark:border-neutral-700 px-3 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-50 transition"
+              >
+                No
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleting}
+                className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                {deleting ? "Removing…" : "Yes"}
+              </button>
+            </div>
           </div>
         </div>
       )}
