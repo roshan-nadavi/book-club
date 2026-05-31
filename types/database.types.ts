@@ -256,6 +256,7 @@ export type Database = {
             sender_id: string | null;
             content: string;
             created_at: string;
+            spoiler_chapter: number | null;
           };
           Insert: {
             id?: string;
@@ -263,6 +264,7 @@ export type Database = {
             sender_id?: string | null;
             content: string;
             created_at?: string;
+            spoiler_chapter: number | null;
           };
           Update: {
             id?: string;
@@ -270,6 +272,7 @@ export type Database = {
             sender_id?: string | null;
             content?: string;
             created_at?: string;
+            spoiler_chapter: number | null;
           };
           Relationships: [
             {
