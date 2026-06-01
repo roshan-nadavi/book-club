@@ -120,6 +120,8 @@ function SpoilerMessage({
 // Main component
 // ---------------------------------------------------------------------------
 
+const POLL_INTERVAL_MS = 4000;
+
 export default function BookSplitView({
   bookId,
   groupId,
@@ -152,13 +154,67 @@ export default function BookSplitView({
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Track whether the user is scrolled to the bottom so we only auto-scroll
+  // when they are already at the bottom (don't yank them away mid-read).
+  const isAtBottomRef = useRef(true);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
   // Spoiler compose state
   const [spoilerEnabled, setSpoilerEnabled] = useState(false);
   const [spoilerChapter, setSpoilerChapter] = useState<string>("");
 
+  // Keep a stable ref to the latest message ID so the polling callback can
+  // read it without being recreated on every render.
+  const latestMessageIdRef = useRef<string | null>(
+    initialMessages.length > 0 ? initialMessages[initialMessages.length - 1].id : null
+  );
+
+  // ── Scroll tracking ───────────────────────────────────────
+
+  function handleScroll() {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    // Consider "at bottom" if within 80px of the bottom
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }
+
+  // Scroll to bottom only when the user is already there
+  function scrollToBottomIfNeeded() {
+    if (isAtBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollToBottomIfNeeded();
   }, [messages]);
+
+  // ── Polling ───────────────────────────────────────────────
+
+  useEffect(() => {
+    const intervalId = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `/api/books/${bookId}/messages?group_id=${groupId}`
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        const fetched: Message[] = data.messages ?? [];
+        if (fetched.length === 0) return;
+
+        const newestId = fetched[fetched.length - 1].id;
+        // Only update state when there are genuinely new messages
+        if (newestId !== latestMessageIdRef.current) {
+          latestMessageIdRef.current = newestId;
+          setMessages(fetched);
+        }
+      } catch {
+        // Network blip — silently ignore, will retry next interval
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [bookId, groupId]);
 
   // ── Resizable divider ─────────────────────────────────────
 
@@ -270,7 +326,6 @@ export default function BookSplitView({
     if (!content) return;
     setSending(true);
 
-    // Determine spoiler_chapter to send
     const spoilerChapterValue =
       spoilerEnabled && spoilerChapter !== ""
         ? Number(spoilerChapter)
@@ -288,21 +343,25 @@ export default function BookSplitView({
 
     if (res.ok) {
       const data = await res.json();
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: data.messageId,
-          book_id: bookId,
-          group_id: groupId,
-          sender_id: currentUserId,
-          content,
-          created_at: new Date().toISOString(),
-          sender_username: currentUserUsername,
-          spoiler_chapter: spoilerChapterValue,
-        },
-      ]);
+      const newMsg: Message = {
+        id: data.messageId,
+        book_id: bookId,
+        group_id: groupId,
+        sender_id: currentUserId,
+        content,
+        created_at: new Date().toISOString(),
+        sender_username: currentUserUsername,
+        spoiler_chapter: spoilerChapterValue,
+      };
+      // Update state and advance the ref so the next poll won't duplicate it
+      setMessages((prev) => {
+        const updated = [...prev, newMsg];
+        latestMessageIdRef.current = data.messageId;
+        return updated;
+      });
+      // Always scroll after sending your own message
+      isAtBottomRef.current = true;
       setMessageContent("");
-      // Reset spoiler state after sending
       setSpoilerEnabled(false);
       setSpoilerChapter("");
     }
@@ -326,8 +385,6 @@ export default function BookSplitView({
     return Math.min(100, Math.round((chapter / totalChapters) * 100));
   }
 
-  // Build chapter options for the spoiler dropdown.
-  // Offer every integer chapter up to totalChapters, or up to 100 if unknown.
   const maxChapter = totalChapters ?? 100;
   const chapterOptions = Array.from({ length: maxChapter }, (_, i) => i + 1);
 
@@ -501,7 +558,11 @@ export default function BookSplitView({
         </div>
 
         {/* Message list */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
+        >
           {messages.length === 0 && (
             <p className="text-sm text-neutral-400 dark:text-neutral-500 text-center py-8">
               No messages yet. Start the discussion!
@@ -531,7 +592,6 @@ export default function BookSplitView({
 
           {/* Spoiler toggle row — shown above the input */}
           <div className="flex items-center gap-2">
-            {/* Toggle button */}
             <button
               type="button"
               onClick={() => {
@@ -545,7 +605,6 @@ export default function BookSplitView({
                   : "bg-white border-neutral-300 text-neutral-500 hover:border-neutral-400 hover:text-neutral-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-500"
               }`}
             >
-              {/* Lock icon */}
               <svg
                 className="w-3 h-3"
                 fill="none"
@@ -554,14 +613,12 @@ export default function BookSplitView({
                 strokeWidth={2.5}
               >
                 {spoilerEnabled ? (
-                  // Locked
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
                   />
                 ) : (
-                  // Unlocked
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -572,7 +629,6 @@ export default function BookSplitView({
               Spoiler
             </button>
 
-            {/* Chapter dropdown — only visible when spoiler is enabled */}
             {spoilerEnabled && (
               <>
                 <span className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -591,7 +647,6 @@ export default function BookSplitView({
                   ))}
                 </select>
 
-                {/* Preview badge */}
                 {spoilerChapter !== "" && (
                   <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400">
                     Ch.{spoilerChapter}+
@@ -636,7 +691,6 @@ export default function BookSplitView({
             </button>
           </form>
 
-          {/* Helper text when spoiler is on but no chapter selected */}
           {spoilerEnabled && spoilerChapter === "" && (
             <p className="text-[11px] text-amber-600 dark:text-amber-400">
               Select a chapter above to enable the spoiler gate.

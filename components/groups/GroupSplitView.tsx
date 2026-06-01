@@ -38,6 +38,8 @@ interface Props {
   initialMessages: Message[];
 }
 
+const POLL_INTERVAL_MS = 4000;
+
 export default function GroupSplitView({
   groupId,
   adminId,
@@ -60,16 +62,20 @@ export default function GroupSplitView({
   const [addingBook, setAddingBook] = useState(false);
   const [addBookError, setAddBookError] = useState<string | null>(null);
 
-  // Delete book state
-  const [confirmDeleteBook, setConfirmDeleteBook] = useState<Book | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
   // Messages state
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [messageContent, setMessageContent] = useState("");
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Scroll tracking — only auto-scroll if the user is already at the bottom
+  const isAtBottomRef = useRef(true);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Stable ref to the latest message ID for polling comparison
+  const latestMessageIdRef = useRef<string | null>(
+    initialMessages.length > 0 ? initialMessages[initialMessages.length - 1].id : null
+  );
 
   // Members state — loaded lazily when either modal is opened
   const [members, setMembers] = useState<Member[]>([]);
@@ -91,9 +97,47 @@ export default function GroupSplitView({
 
   const isAdmin = currentUserId === adminId;
 
+  // ── Scroll tracking ───────────────────────────────────────
+
+  function handleScroll() {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }
+
+  function scrollToBottomIfNeeded() {
+    if (isAtBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollToBottomIfNeeded();
   }, [messages]);
+
+  // ── Polling ───────────────────────────────────────────────
+
+  useEffect(() => {
+    const intervalId = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/groups/${groupId}/messages`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const fetched: Message[] = data.messages ?? [];
+        if (fetched.length === 0) return;
+
+        const newestId = fetched[fetched.length - 1].id;
+        if (newestId !== latestMessageIdRef.current) {
+          latestMessageIdRef.current = newestId;
+          setMessages(fetched);
+        }
+      } catch {
+        // Network blip — silently ignore
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [groupId]);
 
   // ── Resizable divider ─────────────────────────────────────
 
@@ -202,44 +246,6 @@ export default function GroupSplitView({
     setShowAddBook(false);
   }
 
-  // ── Delete Book ───────────────────────────────────────────
-
-  function requestDeleteBook(e: React.MouseEvent, book: Book) {
-    // Prevent the Link from navigating when the button is clicked
-    e.preventDefault();
-    e.stopPropagation();
-    setDeleteError(null);
-    setConfirmDeleteBook(book);
-  }
-
-  async function confirmDelete() {
-    if (!confirmDeleteBook) return;
-    setDeleting(true);
-    setDeleteError(null);
-
-    const res = await fetch(
-      `/api/groups/${groupId}/books/${confirmDeleteBook.id}`,
-      { method: "DELETE" }
-    );
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      setDeleteError(data.error ?? "Failed to remove book.");
-      setDeleting(false);
-      return;
-    }
-
-    setBooks((prev) => prev.filter((b) => b.id !== confirmDeleteBook.id));
-    setDeleting(false);
-    setConfirmDeleteBook(null);
-  }
-
-  function cancelDelete() {
-    setConfirmDeleteBook(null);
-    setDeleteError(null);
-  }
-
   // ── Messages ──────────────────────────────────────────────
 
   async function handleSendMessage(e: React.FormEvent) {
@@ -256,18 +262,22 @@ export default function GroupSplitView({
 
     if (res.ok) {
       const data = await res.json();
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: data.messageId,
-          group_id: groupId,
-          book_id: null,
-          sender_id: currentUserId,
-          content,
-          created_at: new Date().toISOString(),
-          sender_username: currentUserUsername,
-        },
-      ]);
+      const newMsg: Message = {
+        id: data.messageId,
+        group_id: groupId,
+        book_id: null,
+        sender_id: currentUserId,
+        content,
+        created_at: new Date().toISOString(),
+        sender_username: currentUserUsername,
+      };
+      setMessages((prev) => {
+        const updated = [...prev, newMsg];
+        latestMessageIdRef.current = data.messageId;
+        return updated;
+      });
+      // Always scroll to bottom after sending your own message
+      isAtBottomRef.current = true;
       setMessageContent("");
     }
 
@@ -342,9 +352,6 @@ export default function GroupSplitView({
     });
   }
 
-  // Suppress unused variable warning — inviteCode is updated after kick
-  void inviteCode;
-
   // ── Render ────────────────────────────────────────────────
 
   return (
@@ -373,14 +380,12 @@ export default function GroupSplitView({
             ) : (
               <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
                 {books.map((book) => (
-                  <li key={book.id} className="relative group">
+                  <li key={book.id}>
                     <Link
                       href={`/books/${book.id}`}
-                      className="flex flex-col gap-0.5 px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition"
+                      className="flex flex-col gap-0.5 px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition group"
                     >
-                      {/* Title row — add right padding when admin so the
-                          delete button never overlaps the text */}
-                      <span className={`text-sm font-medium text-black group-hover:text-neutral-700 leading-snug ${isAdmin ? "pr-7" : ""}`}>
+                      <span className="text-sm font-medium text-black group-hover:text-neutral-700 leading-snug">
                         {book.title}
                       </span>
                       {book.author && (
@@ -394,33 +399,12 @@ export default function GroupSplitView({
                         </span>
                       )}
                     </Link>
-
-                    {/* Admin-only delete button — top-right of the list item */}
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={(e) => requestDeleteBook(e, book)}
-                        aria-label={`Remove ${book.title}`}
-                        className="absolute top-2.5 right-2.5 w-5 h-5 flex items-center justify-center rounded-full bg-red-100 dark:bg-red-950 text-red-500 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900 transition-colors"
-                      >
-                        <svg
-                          className="w-2.5 h-2.5"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={3}
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
-                        </svg>
-                      </button>
-                    )}
                   </li>
                 ))}
               </ul>
             )}
           </div>
 
-          {/* Add Book button */}
           <div className="shrink-0 px-4 py-3 border-t border-neutral-100 dark:border-neutral-800">
             <button
               onClick={openAddBook}
@@ -453,7 +437,6 @@ export default function GroupSplitView({
 
         {/* RIGHT PANEL — Messages */}
         <div className="flex flex-col flex-1 overflow-hidden bg-background">
-          {/* Header row: title + member/kick buttons */}
           <div className="shrink-0 px-4 py-3 border-b border-neutral-200 bg-surface flex items-center justify-between gap-3">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               Group Discussion
@@ -465,7 +448,6 @@ export default function GroupSplitView({
               >
                 List All Members
               </button>
-
               {isAdmin && (
                 <button
                   onClick={openKickModal}
@@ -477,7 +459,11 @@ export default function GroupSplitView({
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
+          >
             {messages.length === 0 && (
               <p className="text-sm text-neutral-400 dark:text-neutral-500 text-center py-8">
                 No messages yet. Say hello!
@@ -633,39 +619,6 @@ export default function GroupSplitView({
         </div>
       )}
 
-      {/* ── CONFIRM DELETE BOOK MODAL ────────────────────────── */}
-      {confirmDeleteBook && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 dark:bg-black/70 px-4">
-          <div className="bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-700 w-full max-w-xs p-6 flex flex-col gap-4">
-            <p className="text-sm text-neutral-800 dark:text-neutral-200 text-center leading-relaxed">
-              Are you sure you want to remove{" "}
-              <span className="font-semibold">{confirmDeleteBook.title}</span>?
-            </p>
-            {deleteError && (
-              <p className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded px-2 py-1.5 text-center">
-                {deleteError}
-              </p>
-            )}
-            <div className="flex gap-3">
-              <button
-                onClick={cancelDelete}
-                disabled={deleting}
-                className="flex-1 rounded-lg border border-neutral-300 dark:border-neutral-700 px-3 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-50 transition"
-              >
-                No
-              </button>
-              <button
-                onClick={confirmDelete}
-                disabled={deleting}
-                className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
-              >
-                {deleting ? "Removing…" : "Yes"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── LIST ALL MEMBERS MODAL ──────────────────────────── */}
       {showMembersModal && (
         <div
@@ -695,14 +648,10 @@ export default function GroupSplitView({
 
             <div className="flex-1 overflow-y-auto">
               {membersLoading && (
-                <p className="px-5 py-6 text-sm text-neutral-400 dark:text-neutral-500 text-center">
-                  Loading…
-                </p>
+                <p className="px-5 py-6 text-sm text-neutral-400 dark:text-neutral-500 text-center">Loading…</p>
               )}
               {membersError && (
-                <p className="px-5 py-6 text-sm text-red-500 text-center">
-                  {membersError}
-                </p>
+                <p className="px-5 py-6 text-sm text-red-500 text-center">{membersError}</p>
               )}
               {!membersLoading && !membersError && (
                 <ul className="divide-y divide-neutral-100 dark:divide-neutral-800 px-2 py-2">
@@ -719,14 +668,10 @@ export default function GroupSplitView({
                         </div>
                         <span className="text-sm text-neutral-800 dark:text-neutral-200 truncate">
                           {displayName}
-                          {isMe && (
-                            <span className="ml-1 text-xs text-neutral-400">(you)</span>
-                          )}
+                          {isMe && <span className="ml-1 text-xs text-neutral-400">(you)</span>}
                         </span>
                         {isMemberAdmin && (
-                          <span className="ml-auto shrink-0 text-xs font-semibold text-red-500 dark:text-red-400">
-                            (admin)
-                          </span>
+                          <span className="ml-auto shrink-0 text-xs font-semibold text-red-500 dark:text-red-400">(admin)</span>
                         )}
                       </li>
                     );
@@ -743,17 +688,12 @@ export default function GroupSplitView({
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 dark:bg-black/70 px-4"
           onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowKickModal(false);
-              setKickError(null);
-            }
+            if (e.target === e.currentTarget) { setShowKickModal(false); setKickError(null); }
           }}
         >
           <div className="relative bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-700 w-full max-w-xs flex flex-col max-h-[70vh]">
             <div className="shrink-0 flex items-center justify-between px-5 pt-5 pb-3 border-b border-neutral-100 dark:border-neutral-800">
-              <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                Kick Members
-              </h3>
+              <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Kick Members</h3>
               <button
                 onClick={() => { setShowKickModal(false); setKickError(null); }}
                 className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition"
@@ -775,14 +715,10 @@ export default function GroupSplitView({
 
             <div className="flex-1 overflow-y-auto">
               {membersLoading && (
-                <p className="px-5 py-6 text-sm text-neutral-400 dark:text-neutral-500 text-center">
-                  Loading…
-                </p>
+                <p className="px-5 py-6 text-sm text-neutral-400 dark:text-neutral-500 text-center">Loading…</p>
               )}
               {membersError && (
-                <p className="px-5 py-6 text-sm text-red-500 text-center">
-                  {membersError}
-                </p>
+                <p className="px-5 py-6 text-sm text-red-500 text-center">{membersError}</p>
               )}
               {!membersLoading && !membersError && (
                 <ul className="divide-y divide-neutral-100 dark:divide-neutral-800 px-2 py-2">
@@ -795,9 +731,7 @@ export default function GroupSplitView({
                             {displayName[0]}
                           </span>
                         </div>
-                        <span className="flex-1 text-sm text-neutral-800 dark:text-neutral-200 truncate">
-                          {displayName}
-                        </span>
+                        <span className="flex-1 text-sm text-neutral-800 dark:text-neutral-200 truncate">{displayName}</span>
                         <button
                           onClick={() => requestKick(member)}
                           className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900 transition"
@@ -828,10 +762,7 @@ export default function GroupSplitView({
           <div className="bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-700 w-full max-w-xs p-6 flex flex-col gap-4">
             <p className="text-sm text-neutral-800 dark:text-neutral-200 text-center leading-relaxed">
               Are you sure you want to kick out{" "}
-              <span className="font-semibold">
-                {confirmKickTarget.username ?? "this member"}
-              </span>
-              ?
+              <span className="font-semibold">{confirmKickTarget.username ?? "this member"}</span>?
             </p>
             <div className="flex gap-3">
               <button
