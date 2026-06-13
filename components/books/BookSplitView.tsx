@@ -173,16 +173,7 @@ export default function BookSplitView({
 
   // Merge server messages with any optimistic ones not yet confirmed by SWR.
   const serverMessages = swrData?.messages ?? initialMessages;
-  const serverIds = new Set(serverMessages.map((m) => m.id));
-  const pendingOptimistic = optimisticMessages.filter((m) => !serverIds.has(m.id));
-  const messages = [...serverMessages, ...pendingOptimistic];
-
-  // Once SWR confirms an optimistic message, drop it from the local list.
-  useEffect(() => {
-    if (pendingOptimistic.length === 0 && optimisticMessages.length > 0) {
-      setOptimisticMessages([]);
-    }
-  }, [pendingOptimistic.length, optimisticMessages.length]);
+  const messages = [...serverMessages, ...optimisticMessages];
 
   // ── Scroll tracking ───────────────────────────────────────
 
@@ -307,9 +298,10 @@ export default function BookSplitView({
     });
 
     if (res.ok) {
-      // Trigger an immediate revalidation so SWR picks up the real message
-      // (with the real DB id) and the optimistic entry gets pruned.
-      mutate();
+      // Wait for the revalidation to complete, then drop the optimistic
+      // entry — the real message from the server will now be in swrData.
+      await mutate();
+      setOptimisticMessages((prev) => prev.filter((m) => m.id !== tempId));
     } else {
       // Roll back the optimistic message on failure
       setOptimisticMessages((prev) => prev.filter((m) => m.id !== tempId));

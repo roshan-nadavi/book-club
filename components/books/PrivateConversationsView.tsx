@@ -159,16 +159,7 @@ export default function PrivateConversationsView({
 
   // Merge server messages with pending optimistic ones
   const serverMessages = swrData?.messages ?? [];
-  const serverIds = new Set(serverMessages.map((m) => m.id));
-  const pendingOptimistic = optimisticMessages.filter((m) => !serverIds.has(m.id));
-  const messages = [...serverMessages, ...pendingOptimistic];
-
-  // Drop optimistic messages once SWR confirms them
-  useEffect(() => {
-    if (pendingOptimistic.length === 0 && optimisticMessages.length > 0) {
-      setOptimisticMessages([]);
-    }
-  }, [pendingOptimistic.length, optimisticMessages.length]);
+  const messages = [...serverMessages, ...optimisticMessages];
 
   // Clear optimistic messages when switching rooms
   useEffect(() => {
@@ -266,7 +257,8 @@ export default function PrivateConversationsView({
     });
 
     if (res.ok) {
-      mutate();
+      await mutate();
+      setOptimisticMessages((prev) => prev.filter((m) => m.id !== tempId));
     } else {
       setOptimisticMessages((prev) => prev.filter((m) => m.id !== tempId));
       setMessageContent(content);

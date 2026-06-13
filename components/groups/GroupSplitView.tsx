@@ -115,15 +115,7 @@ export default function GroupSplitView({
   );
 
   const serverMessages = swrData?.messages ?? initialMessages;
-  const serverIds = new Set(serverMessages.map((m) => m.id));
-  const pendingOptimistic = optimisticMessages.filter((m) => !serverIds.has(m.id));
-  const messages = [...serverMessages, ...pendingOptimistic];
-
-  useEffect(() => {
-    if (pendingOptimistic.length === 0 && optimisticMessages.length > 0) {
-      setOptimisticMessages([]);
-    }
-  }, [pendingOptimistic.length, optimisticMessages.length]);
+  const messages = [...serverMessages, ...optimisticMessages];
 
   // ── Scroll tracking ───────────────────────────────────────
 
@@ -273,7 +265,8 @@ export default function GroupSplitView({
     });
 
     if (res.ok) {
-      mutate();
+      await mutate();
+      setOptimisticMessages((prev) => prev.filter((m) => m.id !== tempId));
     } else {
       setOptimisticMessages((prev) => prev.filter((m) => m.id !== tempId));
       setMessageContent(content);
