@@ -72,24 +72,25 @@ export default async function HomePage({
                 key={group.id}
                 className="rounded-lg border border-neutral-200 bg-surface hover:border-neutral-400 hover:shadow-sm transition"
               >
-                <Link
-                  href={`/groups/${group.id}`}
-                  className="flex items-center justify-between px-4 pt-3 pb-2"
-                >
-                  <p className="text-sm font-medium text-black">
-                    {group.name}
-                  </p>
-                  <svg
-                    className="h-4 w-4 shrink-0 text-neutral-400"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
+                <div className="flex items-center gap-2 px-4 pt-3 pb-2">
+                  <Link
+                    href={`/groups/${group.id}`}
+                    className="flex min-w-0 flex-1 items-center justify-between gap-2"
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                </Link>
-                <LeaveGroupButton
+                    <p className="text-sm font-medium text-black truncate">
+                      {group.name}
+                    </p>
+                    <svg
+                      className="h-4 w-4 shrink-0 text-neutral-400"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </Link>
+                  <LeaveGroupButton
                     groupId={group.id}
                     groupName={group.name}
                     isAdmin={group.admin_id === user.id}
