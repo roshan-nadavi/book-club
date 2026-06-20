@@ -42,7 +42,7 @@ export type Database = {
             admin_id?: string | null;
             invite_code: string;
             created_at?: string;
-            idempotency_key: string | null;
+            idempotency_key?: string | null;
           };
           Update: {
             id?: string;
@@ -50,7 +50,7 @@ export type Database = {
             admin_id?: string | null;
             invite_code?: string;
             created_at?: string;
-            idempotency_key: string | null;
+            idempotency_key?: string | null;
           };
           Relationships: [
             {
