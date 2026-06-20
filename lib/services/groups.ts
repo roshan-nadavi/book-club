@@ -6,6 +6,7 @@ export type GroupSummary = {
   name: string;
   invite_code: string;
   created_at: string;
+  admin_id: string | null;
 };
 
 export type GroupDetail = {
@@ -63,7 +64,7 @@ export async function listGroupsForUser(
 ): Promise<{ groups: GroupSummary[]; error: string | null }> {
   const { data, error } = await client
     .from("memberships")
-    .select("groups!inner(id, name, invite_code, created_at)")
+    .select("groups!inner(id, name, invite_code, created_at, admin_id)")
     .eq("user_id", userId);
 
   if (error) {
@@ -223,33 +224,75 @@ export async function getGroupMembers(
   return { ok: true, members };
 }
 
-// ---------------------------------------------------------------------------
-// Create a group with the creator as a member
-// ---------------------------------------------------------------------------
-
 export type CreateGroupResult =
   | { ok: true; groupId: string }
   | { ok: false; message: string };
 
 /**
  * Create a group and add the user as a member.
+ *
+ * Idempotency: `idempotencyKey` is a UUID the caller generates once per
+ * form render. `groups.idempotency_key` has a UNIQUE constraint, so a
+ * duplicate submission (e.g. a double-click before the page redirects)
+ * fails the insert with a 23505 unique-violation. Instead of surfacing
+ * that as an error, we fetch the group the first request already created
+ * and return it — so no matter how many times the user clicked, they end
+ * up with exactly one group.
+ *
  * Two writes are inherently sequential (insert group → insert membership),
  * so two calls are unavoidable here.
  */
 export async function createGroupWithMembership(
   client: SupabaseClient<Database>,
   userId: string,
-  name: string
+  name: string,
+  idempotencyKey?: string | null
 ): Promise<CreateGroupResult> {
+  const trimmedName = name.trim();
   const invite_code = generateInviteCode();
 
   const { data: group, error: groupError } = await client
     .from("groups")
-    .insert({ name, admin_id: userId, invite_code })
+    .insert({
+      name: trimmedName,
+      admin_id: userId,
+      invite_code,
+      idempotency_key: idempotencyKey ?? null,
+    })
     .select("id")
     .single();
 
   if (groupError || !group) {
+    if (groupError?.code === "23505" && idempotencyKey) {
+      // Same form submission landed twice — return the group the original
+      // request created instead of erroring or duplicating it.
+      const { data: existing, error: existingError } = await client
+        .from("groups")
+        .select("id")
+        .eq("idempotency_key", idempotencyKey)
+        .maybeSingle();
+
+      if (existingError || !existing) {
+        return {
+          ok: false,
+          message: existingError?.message ?? "Could not create group.",
+        };
+      }
+
+      // The original request should have already created this membership;
+      // insert defensively in case this request raced ahead of it. A
+      // duplicate-membership conflict (23505) just means we're already in.
+      const { error: memberError } = await client
+        .from("memberships")
+        .insert({ user_id: userId, group_id: existing.id });
+
+      if (memberError && memberError.code !== "23505") {
+        return { ok: false, message: memberError.message };
+      }
+
+      return { ok: true, groupId: existing.id };
+    }
+
     return {
       ok: false,
       message: groupError?.message ?? "Could not create group.",
@@ -269,6 +312,7 @@ export async function createGroupWithMembership(
 
   return { ok: true, groupId: group.id };
 }
+
 
 // ---------------------------------------------------------------------------
 // Fetch all data needed to render the group page

@@ -6,6 +6,7 @@ import LogoutButton from "@/components/auth/LogoutButton";
 import CreateGroupForm from "@/components/groups/CreateGroupForm";
 import JoinGroupForm from "@/components/groups/JoinGroupForm";
 import CopyButton from "@/components/ui/CopyButton";
+import LeaveGroupButton from "@/components/groups/LeaveGroupButton";
 
 export default async function HomePage({
   searchParams,
@@ -88,6 +89,12 @@ export default async function HomePage({
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                   </svg>
                 </Link>
+                <LeaveGroupButton
+                    groupId={group.id}
+                    groupName={group.name}
+                    isAdmin={group.admin_id === user.id}
+                  />
+                </div>
                 <div className="flex items-center gap-1.5 px-4 pb-3">
                   <span className="font-mono text-xs text-neutral-500 dark:text-neutral-400">
                     {group.invite_code}

@@ -7,6 +7,9 @@ import { redirect } from "next/navigation";
 
 export async function createGroup(formData: FormData) {
   const name = (formData.get("name") as string | null)?.trim();
+  const idempotencyKey =
+    (formData.get("idempotency_key") as string | null) ?? undefined;
+
   if (!name) {
     redirect("/?error=" + encodeURIComponent("Group name is required."));
   }
@@ -19,7 +22,12 @@ export async function createGroup(formData: FormData) {
     redirect("/login");
   }
 
-  const result = await createGroupWithMembership(supabase, user.id, name);
+  const result = await createGroupWithMembership(
+    supabase,
+    user.id,
+    name,
+    idempotencyKey
+  );
 
   if (!result.ok) {
     redirect("/?error=" + encodeURIComponent(result.message));

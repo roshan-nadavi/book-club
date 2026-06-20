@@ -161,3 +161,70 @@ export async function kickMember(
 
   return { ok: true, newInviteCode: regenResult.newCode };
 }
+
+// ---------------------------------------------------------------------------
+// Leave a group (self-removal)
+// ---------------------------------------------------------------------------
+
+export type LeaveGroupResult =
+  | { ok: true }
+  | { ok: false; kind: "not_member" | "is_admin" | "error"; message: string };
+
+/**
+ * Remove the requesting user from a group they belong to.
+ * The group admin cannot leave their own group — there's no transfer-
+ * ownership or delete-group flow yet, so we block it with a clear message.
+ *
+ * Single read query: start from `groups` filtered by id, left-join
+ * `memberships` scoped to the requesting user so admin_id + membership
+ * existence come back in one call. The delete is a separate write.
+ */
+export async function leaveGroup(
+  client: SupabaseClient<Database>,
+  userId: string,
+  groupId: string
+): Promise<LeaveGroupResult> {
+  const { data: group, error: groupError } = await client
+    .from("groups")
+    .select("admin_id, memberships!left(user_id)")
+    .eq("id", groupId)
+    .eq("memberships.user_id", userId)
+    .maybeSingle();
+
+  if (groupError) {
+    return { ok: false, kind: "error", message: groupError.message };
+  }
+  if (!group) {
+    return { ok: false, kind: "not_member", message: "Group not found." };
+  }
+
+  const memberships = group.memberships as { user_id: string }[];
+  if (memberships.length === 0) {
+    return {
+      ok: false,
+      kind: "not_member",
+      message: "You are not a member of this group.",
+    };
+  }
+
+  if (group.admin_id === userId) {
+    return {
+      ok: false,
+      kind: "is_admin",
+      message:
+        "You're the admin of this group, so you can't leave it. Delete the group or transfer admin rights instead.",
+    };
+  }
+
+  const { error: deleteError } = await client
+    .from("memberships")
+    .delete()
+    .eq("user_id", userId)
+    .eq("group_id", groupId);
+
+  if (deleteError) {
+    return { ok: false, kind: "error", message: deleteError.message };
+  }
+
+  return { ok: true };
+}
