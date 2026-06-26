@@ -285,3 +285,49 @@ export async function getBookPageData(
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Delete a book from a group (admin only)
+// ---------------------------------------------------------------------------
+
+export type DeleteBookResult =
+  | { ok: true }
+  | { ok: false; kind: "not_found" | "not_admin" | "error"; message: string };
+
+export async function deleteBook(
+  client: SupabaseClient<Database>,
+  userId: string,
+  groupId: string,
+  bookId: string
+): Promise<DeleteBookResult> {
+  // Confirm the book exists and belongs to this group, and fetch the group's admin
+  const { data: book, error: bookError } = await client
+    .from("books")
+    .select("id, group_id, groups!inner(admin_id)")
+    .eq("id", bookId)
+    .eq("group_id", groupId)
+    .maybeSingle();
+
+  if (bookError) {
+    return { ok: false, kind: "error", message: bookError.message };
+  }
+  if (!book) {
+    return { ok: false, kind: "not_found", message: "Book not found in this group." };
+  }
+
+  const group = book.groups as unknown as { admin_id: string | null };
+  if (group.admin_id !== userId) {
+    return { ok: false, kind: "not_admin", message: "Only the group admin can remove books." };
+  }
+
+  const { error: deleteError } = await client
+    .from("books")
+    .delete()
+    .eq("id", bookId);
+
+  if (deleteError) {
+    return { ok: false, kind: "error", message: deleteError.message };
+  }
+
+  return { ok: true };
+}
